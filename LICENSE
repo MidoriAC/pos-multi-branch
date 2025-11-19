@@ -1,7 +1,80 @@
-Copyright <2025> <SISTEMA DE VENTAS>
+Copyright <2025> <POS>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+LICENSE — Licencia de Uso y Distribución No Exclusiva
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+Copyright © 2025 Julio Cano. Todos los derechos reservados.
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Este software es propiedad exclusiva de Julio Cano (“El Desarrollador”).
+Al adquirir, instalar, distribuir o utilizar este sistema, el adquirente (“El Distribuidor”) acepta los siguientes términos:
+
+1. Propiedad Intelectual
+
+Todo el código fuente, arquitectura, diseño y documentación del software son propiedad exclusiva del Desarrollador.
+La compra o adquisición no transfiere derechos de propiedad, únicamente derechos definidos en esta licencia.
+
+2. Licencia de Uso para el Distribuidor
+
+El Distribuidor recibe una licencia no exclusiva, revocable y no transferible para:
+
+✔ Usar el software internamente.
+✔ Revender licencias de uso del sistema a terceros (sus propios clientes).
+✔ Instalar el software en clientes finales, únicamente como parte de su servicio.
+
+El Distribuidor NO puede:
+
+✘ Entregar o compartir el código fuente.
+✘ Modificar el software sin autorización escrita.
+✘ Sub-licenciar la distribución a otros revendedores.
+✘ Registrar el software como propio o reclamar derechos de autor.
+
+3. Condiciones para la Reventa
+
+El Distribuidor está autorizado a revender el sistema solo en forma de licencias de uso a clientes finales.
+
+Cada cliente final recibe únicamente:
+
+el derecho a usar el software,
+
+sin acceso al código fuente,
+
+sin derechos de redistribución.
+
+El precio de reventa lo puede definir el Distribuidor, pero esto no le otorga propiedad ni exclusividad sobre el software.
+
+4. Derechos del Desarrollador
+
+El Desarrollador mantiene el derecho de:
+
+✔ Comercializar el software de forma directa a otros clientes.
+✔ Venderlo a otros distribuidores.
+✔ Mejorarlo, modificarlo y crear versiones nuevas.
+✔ Revocar la licencia en caso de uso indebido.
+
+No existe ningún acuerdo de exclusividad con el Distribuidor.
+
+5. Soporte, Actualizaciones y Personalizaciones
+
+El soporte técnico, actualizaciones y modificaciones no están incluidos en esta licencia y requieren un acuerdo adicional entre el Desarrollador y el Distribuidor o el cliente final.
+
+6. Limitación de Responsabilidad
+
+El software se entrega “tal cual”.
+El Desarrollador no se hace responsable por daños, pérdidas o fallos derivados de su uso o mala implementación por parte del Distribuidor o de los clientes finales.
+
+7. Terminación de la Licencia
+
+Esta licencia puede ser terminada si el Distribuidor:
+
+rompe los términos,
+
+intenta apropiarse del software,
+
+distribuye el código fuente,
+
+vende el software como si fuera propio.
+
+Tras la terminación, el Distribuidor debe detener toda distribución y uso del software.
+
+8. Aceptación
+
+El uso, instalación o redistribución del software constituye la aceptación de esta licencia.
