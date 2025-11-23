@@ -143,8 +143,13 @@ Route::get('/logout',[logoutController::class,'logout'])->name('logout');
          //Ventas
         Route::get('/{venta}/pdf', [VentaController::class, 'generarPDF'])->name('ventas.pdf');
         Route::get('/{venta}/xml', [VentaController::class, 'descargarXML'])->name('ventas.xml');
+        Route::get('/{venta}/ticket', [VentaController::class, 'generarTicket'])->name('ventas.ticket');
 
-        // Anulación
+        //Busqueda
+          Route::post('/ventas/buscar-producto',  [VentaController::class,  'buscarProducto'])->name('ventas.buscar-producto');
+    Route::post('/ventas/obtener-por-codigo',  [VentaController::class, 'obtenerPorCodigo'])->name('ventas.obtener-por-codigo');
+
+    // Anulación
         Route::get('/{venta}/anular', [VentaController::class, 'anular'])->name('ventas.anular');
         Route::post('/{venta}/anular', [VentaController::class, 'storeAnulacion'])->name('store-anulacion');
 

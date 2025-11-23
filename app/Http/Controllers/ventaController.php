@@ -372,6 +372,28 @@ class VentaController extends Controller
         return $pdf->stream('venta-' . $venta->numero_comprobante . '.pdf');
     }
 
+    public function generarTicket(Venta $venta)
+    {
+        $venta->load([
+            'productos',
+            'cliente.persona',
+            'user',
+            'comprobante',
+            'sucursal',
+            'logFel'
+        ]);
+
+        if ($venta->tipo_factura === 'FACT') {
+            $pdf = Pdf::loadView('venta.ticket', compact('venta'));
+        } else {
+            $pdf = Pdf::loadView('venta.ticket', compact('venta'));
+        }
+
+        $pdf->setPaper('letter');
+
+        return $pdf->stream('venta-' . $venta->numero_comprobante . '.pdf');
+    }
+
     /**
      * Descargar XML de factura FEL
      */
@@ -646,4 +668,168 @@ class VentaController extends Controller
                 ->with('error', 'Error al reintentar certificación: ' . $e->getMessage());
         }
     }
+
+    /**
+ * Buscar producto por código de barras o nombre (AJAX)
+ * Soporta tanto búsqueda manual como scanner
+ */
+public function buscarProducto(Request $request)
+{
+    try {
+        $termino = $request->termino;
+        $sucursalActiva = $this->getSucursalActiva();
+
+        if (!$sucursalActiva) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No hay sucursal activa'
+            ], 400);
+        }
+
+        // Buscar en inventario de la sucursal
+        $inventarios = InventarioSucursal::with([
+            'producto.marca.caracteristica',
+            'producto.presentacione.caracteristica',
+            'producto.unidadMedida',
+            'ubicacion'
+        ])
+        ->where('sucursal_id', $sucursalActiva->id)
+        ->where('stock_actual', '>', 0)
+        ->where('estado', 1)
+        ->whereHas('producto', function($query) use ($termino) {
+            $query->where('estado', 1)
+                  ->where(function($q) use ($termino) {
+                      $q->where('codigo', 'LIKE', "%{$termino}%")
+                        ->orWhere('nombre', 'LIKE', "%{$termino}%");
+                  });
+        })
+        ->limit(10)
+        ->get();
+
+        $resultados = $inventarios->map(function($inventario) {
+            $producto = $inventario->producto;
+            $bajoCantidad = $inventario->stock_actual <= $inventario->stock_minimo;
+
+            return [
+                'id' => $producto->id,
+                'codigo' => $producto->codigo,
+                'nombre' => $producto->nombre,
+                'nombre_completo' => $producto->nombre_completo,
+                'marca' => $producto->marca->caracteristica->nombre ?? 'Sin marca',
+                'presentacion' => $producto->presentacione->caracteristica->nombre ?? '',
+                'stock_actual' => $inventario->stock_actual,
+                'stock_minimo' => $inventario->stock_minimo,
+                'stock_maximo' => $inventario->stock_maximo,
+                'precio_venta' => $inventario->precio_venta,
+                'bajo_stock' => $bajoCantidad,
+                'ubicacion' => [
+                    'id' => $inventario->ubicacion_id,
+                    'codigo' => $inventario->ubicacion->codigo ?? 'Sin ubicación',
+                    'nombre' => $inventario->ubicacion->nombre ?? 'Sin ubicación',
+                    'tipo' => $inventario->ubicacion->tipo ?? null,
+                    'seccion' => $inventario->ubicacion->seccion ?? null,
+                    'texto_completo' => $inventario->ubicacion
+                        ? "{$inventario->ubicacion->codigo} - {$inventario->ubicacion->nombre}"
+                        : 'Sin ubicación'
+                ]
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'productos' => $resultados,
+            'total' => $resultados->count()
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Error al buscar producto: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al buscar producto: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Obtener producto por código exacto (para scanner)
+ */
+public function obtenerPorCodigo(Request $request)
+{
+    try {
+        $codigo = $request->codigo;
+        $sucursalActiva = $this->getSucursalActiva();
+
+        if (!$sucursalActiva) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No hay sucursal activa'
+            ], 400);
+        }
+
+        $inventario = InventarioSucursal::with([
+            'producto.marca.caracteristica',
+            'producto.presentacione.caracteristica',
+            'producto.unidadMedida',
+            'ubicacion'
+        ])
+        ->where('sucursal_id', $sucursalActiva->id)
+        ->where('estado', 1)
+        ->whereHas('producto', function($query) use ($codigo) {
+            $query->where('codigo', $codigo)
+                  ->where('estado', 1);
+        })
+        ->first();
+
+        if (!$inventario) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Producto no encontrado o sin stock en esta sucursal'
+            ], 404);
+        }
+
+        if ($inventario->stock_actual <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Producto sin stock disponible'
+            ], 400);
+        }
+
+        $producto = $inventario->producto;
+        $bajoCantidad = $inventario->stock_actual <= $inventario->stock_minimo;
+
+        return response()->json([
+            'success' => true,
+            'producto' => [
+                'id' => $producto->id,
+                'codigo' => $producto->codigo,
+                'nombre' => $producto->nombre,
+                'nombre_completo' => $producto->nombre_completo,
+                'marca' => $producto->marca->caracteristica->nombre ?? 'Sin marca',
+                'presentacion' => $producto->presentacione->caracteristica->nombre ?? '',
+                'stock_actual' => $inventario->stock_actual,
+                'stock_minimo' => $inventario->stock_minimo,
+                'stock_maximo' => $inventario->stock_maximo,
+                'precio_venta' => $inventario->precio_venta,
+                'bajo_stock' => $bajoCantidad,
+                'ubicacion' => [
+                    'id' => $inventario->ubicacion_id,
+                    'codigo' => $inventario->ubicacion->codigo ?? 'Sin ubicación',
+                    'nombre' => $inventario->ubicacion->nombre ?? 'Sin ubicación',
+                    'tipo' => $inventario->ubicacion->tipo ?? null,
+                    'seccion' => $inventario->ubicacion->seccion ?? null,
+                    'texto_completo' => $inventario->ubicacion
+                        ? "{$inventario->ubicacion->codigo} - {$inventario->ubicacion->nombre}"
+                        : 'Sin ubicación'
+                ]
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Error al obtener producto: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener producto'
+        ], 500);
+    }
+}
 }

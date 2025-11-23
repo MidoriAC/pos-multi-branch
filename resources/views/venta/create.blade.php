@@ -60,6 +60,55 @@
         border-radius: 8px;
         margin-bottom: 15px;
     }
+
+    #resultados_busqueda .list-group-item {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#resultados_busqueda .list-group-item:hover {
+    background-color: #e7f1ff;
+    border-left: 4px solid #0d6efd;
+}
+
+.stock-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.ubicacion-tag {
+    display: inline-block;
+    background: #6c757d;
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+}
+
+.producto-item {
+    padding: 0.75rem;
+}
+
+.producto-codigo {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #0d6efd;
+}
+
+#buscar_producto:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.scanning {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { border-color: #0d6efd; }
+    50% { border-color: #0dcaf0; }
+}
 </style>
 @endpush
 
@@ -136,7 +185,7 @@
                     <div class="row gy-3">
 
                         <!-----Producto---->
-                        <div class="col-md-8">
+                        {{-- <div class="col-md-8">
                             <label class="form-label">Producto:</label>
                             <select name="producto_id" id="producto_id"
                                     class="form-control selectpicker"
@@ -156,10 +205,193 @@
                                 </option>
                                 @endforeach
                             </select>
-                        </div>
+                        </div> --}}
+
+ <!-----Sección de productos dentro del formulario---->
+<div class="row gy-3">
+
+    <!-----Buscador de productos---->
+    <div class="col-md-12">
+        <label class="form-label">Buscar Producto (Manual o Scanner):</label>
+        <div class="input-group">
+            <span class="input-group-text bg-primary text-white">
+                <i class="fas fa-barcode"></i>
+            </span>
+            <input
+                type="text"
+                id="buscar_producto"
+                class="form-control form-control-lg"
+                placeholder="Escanee código de barras o escriba para buscar..."
+                autocomplete="off"
+                @if($cotizacion) disabled @endif
+            >
+            <button class="btn btn-outline-secondary" type="button" id="limpiar_busqueda">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Resultados de búsqueda (dropdown) -->
+        <div id="resultados_busqueda" class="list-group position-absolute"
+             style="z-index: 1000; max-height: 300px; overflow-y: auto; display: none; width: 50%;">
+        </div>
+
+        <small class="text-muted">
+            <i class="fas fa-info-circle"></i>
+            Escanee el código o escriba el nombre/código del producto
+        </small>
+    </div>
+
+    <!-- INFO DEL PRODUCTO SELECCIONADO -->
+    <div class="col-12" id="info_producto" style="display: none;">
+        <div class="alert alert-info border-start border-primary border-4 mb-3">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <strong><i class="fas fa-box"></i> Producto:</strong>
+                    <p class="mb-0" id="nombre_producto_sel"></p>
+                </div>
+                <div class="col-md-2">
+                    <strong><i class="fas fa-warehouse"></i> Stock:</strong>
+                    <p class="mb-0">
+                        <span id="stock_producto_sel" class="badge bg-primary"></span>
+                    </p>
+                </div>
+                <div class="col-md-3">
+                    <strong><i class="fas fa-map-marker-alt"></i> Ubicación:</strong>
+                    <p class="mb-0" id="ubicacion_producto_sel"></p>
+                </div>
+                <div class="col-md-2">
+                    <strong><i class="fas fa-dollar-sign"></i> Precio:</strong>
+                    <p class="mb-0" id="precio_producto_sel"></p>
+                </div>
+                <div class="col-md-2 text-end">
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="cancelar_seleccion">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-----Precio de venta---->
+    <div class="col-md-3">
+        <label for="precio_venta" class="form-label required">Precio Venta:</label>
+        <div class="input-group">
+            <span class="input-group-text">Q</span>
+            <input type="number" name="precio_venta" id="precio_venta"
+                   class="form-control" step="0.01" min="0" disabled>
+        </div>
+    </div>
+
+    <!-----Cantidad---->
+    <div class="col-md-3">
+        <label for="cantidad" class="form-label required">Cantidad:</label>
+        <input type="number" name="cantidad" id="cantidad"
+               class="form-control" min="1" step="1" disabled>
+    </div>
+
+    <!----Descuento---->
+    <div class="col-md-3">
+        <label for="descuento" class="form-label">Descuento:</label>
+        <div class="input-group">
+            <span class="input-group-text">Q</span>
+            <input type="number" name="descuento" id="descuento"
+                   class="form-control" min="0" step="0.01" value="0" disabled>
+        </div>
+    </div>
+
+    <!-----Botón agregar--->
+    <div class="col-md-3 d-flex align-items-end">
+        <button id="btn_agregar" class="btn btn-primary w-100" type="button" disabled
+                @if($cotizacion) style="display:none" @endif>
+            <i class="fas fa-plus"></i> Agregar
+        </button>
+    </div>
+
+    <!-----Tabla de productos--->
+    <div class="col-12">
+        <div class="table-responsive">
+            <table id="tabla_detalle" class="table table-hover table-bordered">
+                <thead >
+                    <tr>
+                        <th style="width: 5%">#</th>
+                        <th style="width: 35%">Producto</th>
+                        <th style="width: 10%">Cantidad</th>
+                        <th style="width: 15%">Precio</th>
+                        <th style="width: 12%">Descuento</th>
+                        <th style="width: 15%">Subtotal</th>
+                        <th style="width: 8%">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if($cotizacion)
+                        @foreach($cotizacion->productos as $index => $producto)
+                        <tr>
+                            <td>{{$index + 1}}</td>
+                            <td>
+                                <input type="hidden" name="arrayidproducto[]" value="{{$producto->id}}">
+                                <strong>{{$producto->codigo}}</strong><br>
+                                <small class="text-muted">{{$producto->nombre}}</small>
+                            </td>
+                            <td>
+                                <input type="hidden" name="arraycantidad[]" value="{{$producto->pivot->cantidad}}">
+                                <span class="badge bg-primary">{{$producto->pivot->cantidad}}</span>
+                            </td>
+                            <td>
+                                <input type="hidden" name="arrayprecioventa[]" value="{{$producto->pivot->precio_unitario}}">
+                                Q {{number_format($producto->pivot->precio_unitario, 2)}}
+                            </td>
+                            <td>
+                                <input type="hidden" name="arraydescuento[]" value="{{$producto->pivot->descuento}}">
+                                Q {{number_format($producto->pivot->descuento, 2)}}
+                            </td>
+                            <td><strong>Q {{number_format($producto->pivot->subtotal, 2)}}</strong></td>
+                            <td>-</td>
+                        </tr>
+                        @endforeach
+                    @else
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">
+                            <i class="fas fa-inbox fa-2x"></i>
+                            <p>No hay productos agregados</p>
+                        </td>
+                    </tr>
+                    @endif
+                </tbody>
+                <tfoot>
+                    {{-- <tr>
+                        <th colspan="5" class="text-end">Subtotal:</th>
+                        <th colspan="2">Q <span id="sumas">{{$cotizacion ? number_format($cotizacion->subtotal, 2) : '0.00'}}</span></th>
+                    </tr> --}}
+                    {{-- <tr>
+                        <th colspan="5" class="text-end">IVA (12%):</th>
+                        <th colspan="2">Q <span id="iva">{{$cotizacion ? number_format($cotizacion->impuesto, 2) : '0.00'}}</span></th>
+                    </tr> --}}
+                    <tr class="table-primary">
+                        <th colspan="5" class="text-end">TOTAL:</th>
+                        <th colspan="2">
+                            <input type="hidden" name="total" value="{{$cotizacion ? $cotizacion->total : 0}}" id="inputTotal">
+                            <input type="hidden" name="impuesto" id="impuesto" value="{{$cotizacion ? $cotizacion->impuesto : 0}}">
+                            Q <span id="total">{{$cotizacion ? number_format($cotizacion->total, 2) : '0.00'}}</span>
+                        </th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!--Botón cancelar-->
+    <div class="col-12">
+        <button id="cancelar" type="button" class="btn btn-danger"
+                data-bs-toggle="modal" data-bs-target="#cancelModal"
+                @if($cotizacion) style="display: block;" @else style="display: none;" @endif>
+            <i class="fas fa-times"></i> Cancelar Venta
+        </button>
+    </div>
+
+</div>
 
                         <!-----Stock Info---->
-                        <div class="col-md-4">
+                        {{-- <div class="col-md-4">
                             <label class="form-label">Stock Disponible:</label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="fas fa-boxes"></i></span>
@@ -274,16 +506,16 @@
                                     </tfoot>
                                 </table>
                             </div>
-                        </div>
+                        </div> --}}
 
                         <!--Botón cancelar-->
-                        <div class="col-12">
+                        {{-- <div class="col-12">
                             <button id="cancelar" type="button" class="btn btn-danger"
                                     data-bs-toggle="modal" data-bs-target="#cancelModal"
                                     @if($cotizacion) style="display: block;" @else style="display: none;" @endif>
                                 <i class="fas fa-times"></i> Cancelar Venta
                             </button>
-                        </div>
+                        </div> --}}
 
                     </div>
                 </div>
@@ -369,12 +601,12 @@
                         </div> --}}
 
                         <!--Impuesto-->
-                        <div class="col-6">
+                        {{-- <div class="col-6">
                             <label for="impuesto" class="form-label">IVA:</label>
                             <input readonly type="text" name="impuesto" id="impuesto"
                                    class="form-control border-success"
                                    value="{{$cotizacion ? $cotizacion->impuesto : '0.00'}}">
-                        </div>
+                        </div> --}}
 
                         <!--Fecha-->
                         <div class="col-6">
@@ -461,29 +693,29 @@ $(document).ready(function() {
         mostrarValores();
     });
 
-    $('#btn_agregar').click(function() {
-        agregarProducto();
-    });
+    // $('#btn_agregar').click(function() {
+    //     agregarProducto();
+    // });
 
     $('#btnCancelarVenta').click(function() {
         cancelarVenta();
     });
 
-    $('#formVenta').submit(function(e) {
-        if (total === 0) {
-            e.preventDefault();
-            showModal('Debe agregar al menos un producto a la venta', 'error');
-            return false;
-        }
+    // $('#formVenta').submit(function(e) {
+    //     if (total === 0) {
+    //         e.preventDefault();
+    //         showModal('Debe agregar al menos un producto a la venta', 'error');
+    //         return false;
+    //     }
 
-        if (!$('#tipo_factura').val() && !@json($cotizacion ? true : false)) {
-            e.preventDefault();
-            showModal('Debe seleccionar un tipo de factura', 'error');
-            return false;
-        }
+    //     if (!$('#tipo_factura').val() && !@json($cotizacion ? true : false)) {
+    //         e.preventDefault();
+    //         showModal('Debe seleccionar un tipo de factura', 'error');
+    //         return false;
+    //     }
 
-        return confirm('¿Está seguro de realizar esta venta?');
-    });
+    //     return confirm('¿Está seguro de realizar esta venta?');
+    // });
 });
 
 let cont = @if($cotizacion) {{$cotizacion->productos->count()}} @else 0 @endif;
@@ -733,6 +965,591 @@ function showModal(message, icon = 'info') {
         position: icon === 'success' ? 'top-end' : 'center',
         showConfirmButton: icon !== 'success'
     });
+}
+
+// Variables globales
+// let cont = @if($cotizacion) {{$cotizacion->productos->count()}} @else 0 @endif;
+// let subtotal = [];
+// let sumas = @if($cotizacion) {{$cotizacion->subtotal}} @else 0 @endif;
+// let iva = @if($cotizacion) {{$cotizacion->impuesto}} @else 0 @endif;
+// let total = @if($cotizacion) {{$cotizacion->total}} @else 0 @endif;
+// const impuesto = 12;
+
+// Variables para el sistema de búsqueda
+let productoSeleccionado = null;
+let timeoutBusqueda = null;
+let scannerBuffer = '';
+let scannerTimeout = null;
+
+@if($cotizacion)
+    @foreach($cotizacion->productos as $index => $producto)
+        subtotal[{{$index}}] = {{$producto->pivot->subtotal}};
+    @endforeach
+@endif
+
+$(document).ready(function() {
+    // Inicializar sistema de búsqueda
+    inicializarSistemaBusqueda();
+
+    @if(!$cotizacion)
+    disableButtons();
+    @endif
+
+    // Seleccionar tipo de factura
+    $('.tipo-factura-card').click(function() {
+        $('.tipo-factura-card').removeClass('selected');
+        $(this).addClass('selected');
+        const tipo = $(this).data('tipo');
+        $('#tipo_factura').val(tipo);
+    });
+
+    $('#btn_agregar').click(function() {
+        agregarProducto();
+    });
+
+    $('#btnCancelarVenta').click(function() {
+        cancelarVenta();
+    });
+
+    $('#formVenta').submit(function(e) {
+        if (total === 0) {
+            e.preventDefault();
+            showModal('Debe agregar al menos un producto a la venta', 'error');
+            return false;
+        }
+
+        if (!$('#tipo_factura').val() && !@json($cotizacion ? true : false)) {
+            e.preventDefault();
+            showModal('Debe seleccionar un tipo de factura', 'error');
+            return false;
+        }
+
+        return confirm('¿Está seguro de realizar esta venta?');
+    });
+});
+
+/**
+ * Inicializar sistema de búsqueda híbrido
+ */
+function inicializarSistemaBusqueda() {
+    const inputBusqueda = $('#buscar_producto');
+
+    // Detección de scanner de código de barras
+    inputBusqueda.on('keypress', function(e) {
+        const char = String.fromCharCode(e.which);
+        scannerBuffer += char;
+
+        // Limpiar el timeout anterior
+        clearTimeout(scannerTimeout);
+
+        // Si se presiona Enter, es un scanner
+        if (e.which === 13) {
+            e.preventDefault();
+            const codigo = scannerBuffer.replace(/[\r\n]/g, '').trim();
+
+            if (codigo.length > 0) {
+                inputBusqueda.addClass('scanning');
+                buscarPorCodigoExacto(codigo);
+            }
+
+            scannerBuffer = '';
+            return false;
+        }
+
+        // Reset del buffer después de 100ms (indica escritura manual)
+        scannerTimeout = setTimeout(() => {
+            scannerBuffer = '';
+        }, 100);
+    });
+
+    // Búsqueda manual con delay
+    inputBusqueda.on('input', function() {
+        const termino = $(this).val().trim();
+
+        clearTimeout(timeoutBusqueda);
+
+        if (termino.length === 0) {
+            ocultarResultados();
+            return;
+        }
+
+        if (termino.length < 2) {
+            return;
+        }
+
+        // Delay para no hacer requests en cada tecla
+        timeoutBusqueda = setTimeout(() => {
+            buscarProductos(termino);
+        }, 300);
+    });
+
+    // Ocultar resultados al hacer clic fuera
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('#buscar_producto, #resultados_busqueda').length) {
+            ocultarResultados();
+        }
+    });
+
+    // Limpiar búsqueda
+    $('#limpiar_busqueda').click(function() {
+        limpiarBusqueda();
+    });
+
+    // Cancelar selección
+    $('#cancelar_seleccion').click(function() {
+        cancelarSeleccionProducto();
+    });
+
+    // Focus en el input al cargar
+    if (!@json($cotizacion ? true : false)) {
+        inputBusqueda.focus();
+    }
+}
+
+/**
+ * Buscar productos (búsqueda manual con sugerencias)
+ */
+function buscarProductos(termino) {
+    $.ajax({
+        url: '{{ route("ventas.buscar-producto") }}',
+        method: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            termino: termino
+        },
+        beforeSend: function() {
+            mostrarCargando();
+        },
+        success: function(response) {
+            if (response.success && response.productos.length > 0) {
+                mostrarResultados(response.productos);
+            } else {
+                mostrarSinResultados();
+            }
+        },
+        error: function(xhr) {
+            console.error('Error al buscar productos:', xhr);
+            showModal('Error al buscar productos', 'error');
+            ocultarResultados();
+        }
+    });
+}
+
+/**
+ * Buscar por código exacto (para scanner)
+ */
+function buscarPorCodigoExacto(codigo) {
+    $.ajax({
+        url: '{{ route("ventas.obtener-por-codigo") }}',
+        method: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            codigo: codigo
+        },
+        success: function(response) {
+            if (response.success) {
+                $('#buscar_producto').removeClass('scanning');
+                seleccionarProducto(response.producto);
+                $('#buscar_producto').val('');
+                ocultarResultados();
+
+                // Focus en cantidad
+                setTimeout(() => {
+                    $('#cantidad').focus().select();
+                }, 100);
+
+                reproducirSonidoExito();
+            }
+        },
+        error: function(xhr) {
+            $('#buscar_producto').removeClass('scanning');
+
+            let mensaje = 'Producto no encontrado';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                mensaje = xhr.responseJSON.message;
+            }
+
+            showModal(mensaje, 'error');
+            $('#buscar_producto').val('');
+            scannerBuffer = '';
+
+            setTimeout(() => {
+                $('#buscar_producto').focus();
+            }, 100);
+
+            reproducirSonidoError();
+        }
+    });
+}
+
+/**
+ * Mostrar resultados de búsqueda
+ */
+function mostrarResultados(productos) {
+    const container = $('#resultados_busqueda');
+    container.empty();
+
+    productos.forEach(function(producto) {
+        const stockClass = producto.bajo_stock ? 'bg-warning' : 'bg-success';
+        const stockIcon = producto.bajo_stock ? 'fa-exclamation-triangle' : 'fa-check';
+
+        const item = $(`
+            <div class="list-group-item list-group-item-action producto-item" data-producto='${JSON.stringify(producto)}'>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <span class="producto-codigo">${producto.codigo}</span> - ${producto.nombre}
+                        </h6>
+                        <small class="text-muted">
+                            ${producto.marca} | ${producto.presentacion}
+                        </small>
+                        <span class="ubicacion-tag">
+                            <i class="fas fa-map-marker-alt"></i> ${producto.ubicacion.texto_completo}
+                        </span>
+                    </div>
+                    <div class="text-end">
+                        <span class="stock-badge badge ${stockClass}">
+                            <i class="fas ${stockIcon}"></i> Stock: ${producto.stock_actual}
+                        </span>
+                        <div class="mt-1">
+                            <strong class="text-primary">Q ${parseFloat(producto.precio_venta).toFixed(2)}</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        item.click(function() {
+            const prod = JSON.parse($(this).attr('data-producto'));
+            seleccionarProducto(prod);
+            ocultarResultados();
+            $('#buscar_producto').val('');
+
+            setTimeout(() => {
+                $('#cantidad').focus().select();
+            }, 100);
+        });
+
+        container.append(item);
+    });
+
+    container.show();
+}
+
+/**
+ * Seleccionar producto
+ */
+function seleccionarProducto(producto) {
+    productoSeleccionado = producto;
+
+    // Mostrar info del producto
+    $('#nombre_producto_sel').html(`<strong>${producto.codigo}</strong> - ${producto.nombre}`);
+    $('#stock_producto_sel').text(producto.stock_actual + ' unidades');
+    $('#ubicacion_producto_sel').html(`
+        <span class="badge bg-secondary">
+            <i class="fas fa-map-marker-alt"></i> ${producto.ubicacion.texto_completo}
+        </span>
+    `);
+    $('#precio_producto_sel').text('Q ' + parseFloat(producto.precio_venta).toFixed(2));
+
+    // Aplicar clase según stock
+    if (producto.bajo_stock) {
+        $('#stock_producto_sel').removeClass('bg-primary bg-success').addClass('bg-warning');
+    } else {
+        $('#stock_producto_sel').removeClass('bg-warning').addClass('bg-success');
+    }
+
+    if (producto.stock_actual === 0) {
+        $('#stock_producto_sel').removeClass('bg-warning bg-success').addClass('bg-danger');
+    }
+
+    $('#info_producto').slideDown(300);
+
+    // Habilitar campos
+    $('#precio_venta').val(producto.precio_venta).prop('disabled', false);
+    $('#cantidad').val(1).prop('disabled', false);
+    $('#descuento').val(0).prop('disabled', false);
+    $('#btn_agregar').prop('disabled', false);
+
+    // Deshabilitar búsqueda temporalmente
+    $('#buscar_producto').prop('disabled', true);
+}
+
+/**
+ * Cancelar selección de producto
+ */
+function cancelarSeleccionProducto() {
+    productoSeleccionado = null;
+    $('#info_producto').slideUp(300);
+
+    // Deshabilitar campos
+    $('#precio_venta').val('').prop('disabled', true);
+    $('#cantidad').val('').prop('disabled', true);
+    $('#descuento').val(0).prop('disabled', true);
+    $('#btn_agregar').prop('disabled', true);
+
+    // Habilitar búsqueda
+    $('#buscar_producto').prop('disabled', false).val('').focus();
+}
+
+/**
+ * Agregar producto a la tabla
+ */
+function agregarProducto() {
+    if (!productoSeleccionado) {
+        showModal('Debe seleccionar un producto primero', 'error');
+        return;
+    }
+
+    const cantidad = parseInt($('#cantidad').val()) || 0;
+    const precioVenta = parseFloat($('#precio_venta').val()) || 0;
+    const descuento = parseFloat($('#descuento').val()) || 0;
+
+    // Validaciones
+    if (cantidad <= 0) {
+        showModal('La cantidad debe ser mayor a 0', 'error');
+        $('#cantidad').focus();
+        return;
+    }
+
+    if (precioVenta <= 0) {
+        showModal('El precio debe ser mayor a 0', 'error');
+        $('#precio_venta').focus();
+        return;
+    }
+
+    if (cantidad > productoSeleccionado.stock_actual) {
+        showModal(`Stock insuficiente. Disponible: ${productoSeleccionado.stock_actual}`, 'error');
+        $('#cantidad').focus();
+        return;
+    }
+
+    const subtotalProducto = (cantidad * precioVenta);
+    if (descuento > subtotalProducto) {
+        showModal('El descuento no puede ser mayor al subtotal', 'error');
+        $('#descuento').focus();
+        return;
+    }
+
+    // Verificar si ya existe
+    let existe = false;
+    $('#tabla_detalle tbody tr').each(function() {
+        const id = $(this).find('input[name="arrayidproducto[]"]').val();
+        if (id == productoSeleccionado.id) {
+            existe = true;
+            return false;
+        }
+    });
+
+    if (existe) {
+        showModal('El producto ya fue agregado. Elimínelo primero si desea modificarlo', 'warning');
+        return;
+    }
+
+    // Agregar a la tabla
+    subtotal[cont] = round((cantidad * precioVenta) - descuento);
+    sumas += subtotal[cont];
+    iva = round(sumas * (impuesto / 100));
+    total = round(sumas);
+
+    if ($('#tabla_detalle tbody tr td').attr('colspan') == '7') {
+        $('#tabla_detalle tbody').empty();
+    }
+
+    let fila = '<tr id="fila' + cont + '">' +
+        '<td class="text-center">' + (cont + 1) + '</td>' +
+        '<td>' +
+            '<input type="hidden" name="arrayidproducto[]" value="' + productoSeleccionado.id + '">' +
+            '<strong>' + productoSeleccionado.codigo + '</strong><br>' +
+            '<small class="text-muted">' + productoSeleccionado.nombre + '</small><br>' +
+            '<span class="badge bg-secondary"><i class="fas fa-map-marker-alt"></i> ' +
+            productoSeleccionado.ubicacion.codigo + '</span>' +
+        '</td>' +
+        '<td class="text-center">' +
+            '<input type="hidden" name="arraycantidad[]" value="' + cantidad + '">' +
+            '<span class="badge bg-primary">' + cantidad + '</span>' +
+        '</td>' +
+        '<td class="text-end">' +
+            '<input type="hidden" name="arrayprecioventa[]" value="' + precioVenta + '">' +
+            'Q ' + precioVenta.toFixed(2) +
+        '</td>' +
+        '<td class="text-end">' +
+            '<input type="hidden" name="arraydescuento[]" value="' + descuento + '">' +
+            'Q ' + descuento.toFixed(2) +
+        '</td>' +
+        '<td class="text-end"><strong>Q ' + subtotal[cont].toFixed(2) + '</strong></td>' +
+        '<td class="text-center">' +
+            '<button class="btn btn-danger btn-sm" type="button" onClick="eliminarProducto(' + cont + ')">' +
+                '<i class="fas fa-trash"></i>' +
+            '</button>' +
+        '</td>' +
+    '</tr>';
+
+    $('#tabla_detalle tbody').append(fila);
+    cont++;
+
+    actualizarTotales();
+    cancelarSeleccionProducto();
+    disableButtons();
+
+    showModal('Producto agregado correctamente', 'success');
+}
+
+/**
+ * Eliminar producto
+ */
+function eliminarProducto(indice) {
+    sumas -= round(subtotal[indice]);
+    iva = round(sumas * (impuesto / 100));
+    total = round(sumas);
+
+    actualizarTotales();
+
+    $('#fila' + indice).remove();
+
+    $('#tabla_detalle tbody tr').each(function(index) {
+        $(this).find('td:first').text(index + 1);
+    });
+
+    if ($('#tabla_detalle tbody tr').length === 0) {
+        $('#tabla_detalle tbody').html(`
+            <tr>
+                <td colspan="7" class="text-center text-muted">
+                    <i class="fas fa-inbox fa-2x"></i>
+                    <p>No hay productos agregados</p>
+                </td>
+            </tr>
+        `);
+    }
+
+    disableButtons();
+    showModal('Producto eliminado', 'info');
+}
+
+/**
+ * Cancelar venta
+ */
+function cancelarVenta() {
+    $('#tabla_detalle tbody').html(`
+        <tr>
+            <td colspan="7" class="text-center text-muted">
+                <i class="fas fa-inbox fa-2x"></i>
+                <p>No hay productos agregados</p>
+            </td>
+        </tr>
+    `);
+
+    cont = 0;
+    subtotal = [];
+    sumas = 0;
+    iva = 0;
+    total = 0;
+
+    actualizarTotales();
+    cancelarSeleccionProducto();
+    disableButtons();
+
+    $('.tipo-factura-card').removeClass('selected');
+    $('#tipo_factura').val('');
+}
+
+/**
+ * Actualizar totales
+ */
+function actualizarTotales() {
+    $('#sumas').html(sumas.toFixed(2));
+    $('#iva').html(iva.toFixed(2));
+    $('#total').html(total.toFixed(2));
+    $('#impuesto').val(iva.toFixed(2));
+    $('#inputTotal').val(total.toFixed(2));
+}
+
+/**
+ * Deshabilitar/habilitar botones
+ */
+function disableButtons() {
+    if (total == 0) {
+        $('#guardar').hide();
+        $('#cancelar').hide();
+    } else {
+        $('#guardar').show();
+        $('#cancelar').show();
+    }
+}
+
+/**
+ * Limpiar búsqueda
+ */
+function limpiarBusqueda() {
+    $('#buscar_producto').val('').focus();
+    ocultarResultados();
+    scannerBuffer = '';
+}
+
+/**
+ * Ocultar resultados
+ */
+function ocultarResultados() {
+    $('#resultados_busqueda').hide().empty();
+}
+
+/**
+ * Mostrar cargando
+ */
+function mostrarCargando() {
+    $('#resultados_busqueda').html(`
+        <div class="list-group-item text-center">
+            <i class="fas fa-spinner fa-spin"></i> Buscando...
+        </div>
+    `).show();
+}
+
+/**
+ * Mostrar sin resultados
+ */
+function mostrarSinResultados() {
+    $('#resultados_busqueda').html(`
+        <div class="list-group-item text-center text-muted">
+            <i class="fas fa-search"></i> No se encontraron productos
+        </div>
+    `).show();
+}
+
+/**
+ * Funciones auxiliares
+ */
+function round(num, decimales = 2) {
+    return Math.round((num + Number.EPSILON) * Math.pow(10, decimales)) / Math.pow(10, decimales);
+}
+
+function showModal(message, icon = 'info') {
+    const iconColors = {
+        'success': '#28a745',
+        'error': '#dc3545',
+        'warning': '#ffc107',
+        'info': '#17a2b8'
+    };
+
+    Swal.fire({
+        text: message,
+        icon: icon,
+        iconColor: iconColors[icon],
+        confirmButtonColor: iconColors[icon],
+        confirmButtonText: 'Aceptar',
+        timer: icon === 'success' ? 2000 : null,
+        timerProgressBar: icon === 'success',
+        toast: icon === 'success',
+        position: icon === 'success' ? 'top-end' : 'center',
+        showConfirmButton: icon !== 'success'
+    });
+}
+
+function reproducirSonidoExito() {
+    console.log('✓ Beep - Producto encontrado');
+}
+
+function reproducirSonidoError() {
+    console.log('✗ Beep - Error');
 }
 </script>
 @endpush

@@ -45,6 +45,9 @@
             <a href="{{ route('ventas.pdf', $venta->id) }}" target="_blank" class="btn btn-danger">
                 <i class="fas fa-file-pdf"></i> Generar PDF
             </a>
+            <a href="{{ route('ventas.ticket', $venta->id) }}" target="_blank" class="btn btn-primary">
+                <i class="fas fa-file"></i> Generar Ticket
+            </a>
 
             @if($venta->esFEL() && $venta->xml_fel)
             <a href="{{ route('ventas.xml', $venta->id) }}" class="btn btn-info">
