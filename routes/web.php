@@ -249,3 +249,6 @@ Route::get('/404', function () {
 Route::get('/500', function () {
     return view('pages.500');
 });
+Route::get('/403', function () {
+    return view('auth.login');
+});
