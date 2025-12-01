@@ -100,6 +100,26 @@ class Producto extends Model
         return $name;
     }
 
+    //!Se comenta el de arriba y se descomta este al momento de subir a un host
+
+//         public function handleUploadImage($image)
+// {
+//     $file = $image;
+//     $name = time() . '_' . $file->getClientOriginalName();
+
+//     // Ruta física en /public/productos/
+//     $path = public_path('storage/productos');
+
+//     if (!file_exists($path)) {
+//         mkdir($path, 0777, true);
+//     }
+
+//     // Mover archivo manualmente
+//     $file->move($path, $name);
+
+//     return $name;
+// }
+
     // Método para obtener el nombre completo con presentación
     public function getNombreCompletoAttribute()
     {

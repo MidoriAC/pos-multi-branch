@@ -70,6 +70,7 @@ return [
     */
 
     'links' => [
+        //!Se comenta cuando se sube por ssh al host
         public_path('storage') => storage_path('app/public'),
     ],
 
