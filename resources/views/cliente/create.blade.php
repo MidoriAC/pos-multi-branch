@@ -43,7 +43,7 @@
                     <!----NIT (Obligatorio)----->
                     <div class="col-md-6">
                         <label for="nit" class="form-label">NIT: <span class="text-danger">*</span></label>
-                        <input required type="text" name="nit" id="nit" class="form-control" value="{{old('nit')}}" placeholder="Ejemplo: 12345678-9">
+                        <input required type="text" name="nit" id="nit" class="form-control" value="{{old('nit')}}" placeholder="Ejemplo: 123456789">
                         @error('nit')
                         <small class="text-danger">{{'*'.$message}}</small>
                         @enderror
