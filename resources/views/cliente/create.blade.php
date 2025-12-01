@@ -40,10 +40,19 @@
                         @enderror
                     </div>
 
+                    <!----NIT (Obligatorio)----->
+                    <div class="col-md-6">
+                        <label for="nit" class="form-label">NIT: <span class="text-danger">*</span></label>
+                        <input required type="text" name="nit" id="nit" class="form-control" value="{{old('nit')}}" placeholder="Ejemplo: 12345678-9">
+                        @error('nit')
+                        <small class="text-danger">{{'*'.$message}}</small>
+                        @enderror
+                    </div>
+
                     <!-------Razón social------->
                     <div class="col-12" id="box-razon-social">
-                        <label id="label-natural" for="razon_social" class="form-label">Nombres y apellidos:</label>
-                        <label id="label-juridica" for="razon_social" class="form-label">Nombre de la empresa:</label>
+                        <label id="label-natural" for="razon_social" class="form-label">Nombres y apellidos: <span class="text-danger">*</span></label>
+                        <label id="label-juridica" for="razon_social" class="form-label">Nombre de la empresa: <span class="text-danger">*</span></label>
 
                         <input required type="text" name="razon_social" id="razon_social" class="form-control" value="{{old('razon_social')}}">
 
@@ -52,20 +61,54 @@
                         @enderror
                     </div>
 
+                    <!------Nombre comercial (opcional)---->
+                    <div class="col-md-6">
+                        <label for="nombre_comercial" class="form-label">Nombre comercial: <small class="text-muted">(Opcional)</small></label>
+                        <input type="text" name="nombre_comercial" id="nombre_comercial" class="form-control" value="{{old('nombre_comercial')}}">
+                        @error('nombre_comercial')
+                        <small class="text-danger">{{'*'.$message}}</small>
+                        @enderror
+                    </div>
+
                     <!------Dirección---->
-                    <div class="col-12">
-                        <label for="direccion" class="form-label">Dirección:</label>
+                    <div class="col-md-6">
+                        <label for="direccion" class="form-label">Dirección: <span class="text-danger">*</span></label>
                         <input required type="text" name="direccion" id="direccion" class="form-control" value="{{old('direccion')}}">
                         @error('direccion')
                         <small class="text-danger">{{'*'.$message}}</small>
                         @enderror
                     </div>
 
-                    <!--------------Documento------->
+                    <!------Email (opcional)---->
                     <div class="col-md-6">
-                        <label for="documento_id" class="form-label">Tipo de documento:</label>
+                        <label for="email" class="form-label">Email: <small class="text-muted">(Opcional)</small></label>
+                        <input type="email" name="email" id="email" class="form-control" value="{{old('email')}}" placeholder="ejemplo@correo.com">
+                        @error('email')
+                        <small class="text-danger">{{'*'.$message}}</small>
+                        @enderror
+                    </div>
+
+                    <!------Teléfono (opcional)---->
+                    <div class="col-md-6">
+                        <label for="telefono" class="form-label">Teléfono: <small class="text-muted">(Opcional)</small></label>
+                        <input type="text" name="telefono" id="telefono" class="form-control" value="{{old('telefono')}}" placeholder="5555-5555">
+                        @error('telefono')
+                        <small class="text-danger">{{'*'.$message}}</small>
+                        @enderror
+                    </div>
+
+                    <!------Separador visual---->
+                    <div class="col-12">
+                        <hr>
+                        <h6 class="text-muted">Documento adicional (Opcional)</h6>
+                        <small class="text-muted">Si el cliente cuenta con DPI, pasaporte, licencia u otro documento, puede registrarlo aquí.</small>
+                    </div>
+
+                    <!--------------Documento (Opcional)------->
+                    <div class="col-md-6">
+                        <label for="documento_id" class="form-label">Tipo de documento: <small class="text-muted">(Opcional)</small></label>
                         <select class="form-select" name="documento_id" id="documento_id">
-                            <option value="" selected disabled>Seleccione una opción</option>
+                            <option value="" selected>Seleccione una opción</option>
                             @foreach ($documentos as $item)
                             <option value="{{$item->id}}" {{ old('documento_id') == $item->id ? 'selected' : '' }}>{{$item->tipo_documento}}</option>
                             @endforeach
@@ -76,8 +119,8 @@
                     </div>
 
                     <div class="col-md-6">
-                        <label for="numero_documento" class="form-label">Numero de documento:</label>
-                        <input required type="text" name="numero_documento" id="numero_documento" class="form-control" value="{{old('numero_documento')}}">
+                        <label for="numero_documento" class="form-label">Número de documento: <small class="text-muted">(Opcional)</small></label>
+                        <input type="text" name="numero_documento" id="numero_documento" class="form-control" value="{{old('numero_documento')}}">
                         @error('numero_documento')
                         <small class="text-danger">{{'*'.$message}}</small>
                         @enderror
@@ -87,6 +130,7 @@
             </div>
             <div class="card-footer text-center">
                 <button type="submit" class="btn btn-primary">Guardar</button>
+                <a href="{{ route('clientes.index') }}" class="btn btn-secondary">Cancelar</a>
             </div>
         </form>
     </div>

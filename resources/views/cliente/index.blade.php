@@ -39,7 +39,9 @@
                 <thead>
                     <tr>
                         <th>Nombre</th>
+                        <th>NIT</th>
                         <th>Dirección</th>
+                        <th>Contacto</th>
                         <th>Documento</th>
                         <th>Tipo de persona</th>
                         <th>Estado</th>
@@ -50,17 +52,40 @@
                     @foreach ($clientes as $item)
                     <tr>
                         <td>
-                            {{$item->persona->razon_social}}
+                            <p class="fw-semibold mb-0">{{$item->persona->razon_social}}</p>
+                            @if($item->persona->nombre_comercial)
+                            <small class="text-muted">{{$item->persona->nombre_comercial}}</small>
+                            @endif
+                        </td>
+                        <td>
+                            <span class="fw-semibold">{{$item->persona->nit}}</span>
                         </td>
                         <td>
                             {{$item->persona->direccion}}
                         </td>
                         <td>
-                            <p class="fw-semibold mb-1">{{$item->persona->documento->tipo_documento}}</p>
-                            <p class="text-muted mb-0">{{$item->persona->numero_documento}}</p>
+                            @if($item->persona->telefono)
+                            <p class="mb-0"><i class="fas fa-phone me-1"></i>{{$item->persona->telefono}}</p>
+                            @endif
+                            @if($item->persona->email)
+                            <p class="mb-0"><i class="fas fa-envelope me-1"></i>{{$item->persona->email}}</p>
+                            @endif
+                            @if(!$item->persona->telefono && !$item->persona->email)
+                            <span class="text-muted">Sin contacto</span>
+                            @endif
                         </td>
                         <td>
-                            {{$item->persona->tipo_persona}}
+                            @if($item->persona->documento_id && $item->persona->numero_documento)
+                            <p class="fw-semibold mb-1">{{$item->persona->documento->tipo_documento}}</p>
+                            <p class="text-muted mb-0">{{$item->persona->numero_documento}}</p>
+                            @else
+                            <span class="text-muted">Sin documento</span>
+                            @endif
+                        </td>
+                        <td>
+                            <span class="badge rounded-pill {{ $item->persona->tipo_persona == 'natural' ? 'bg-info' : 'bg-primary' }}">
+                                {{ucfirst($item->persona->tipo_persona)}}
+                            </span>
                         </td>
                         <td>
                             @if ($item->persona->estado == 1)

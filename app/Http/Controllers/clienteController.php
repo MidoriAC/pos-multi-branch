@@ -52,6 +52,8 @@ class clienteController extends Controller
             DB::commit();
         } catch (Exception $e) {
             DB::rollBack();
+            \Log::error('Error en store CLIENTE: ' . $e->getMessage());
+
         }
 
         return redirect()->route('clientes.index')->with('success', 'Cliente registrado');
