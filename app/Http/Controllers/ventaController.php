@@ -119,11 +119,197 @@ class VentaController extends Controller
         ));
     }
 
+    public function store(StoreVentaRequest $request)
+    {
+        // Variable para guardar la venta creada y usarla fuera del try/catch de DB
+        $ventaGuardada = null;
+        $sucursalActiva = null;
+
+        // ---------------------------------------------------------
+        // PASO 1: CREACIÓN LOCAL DE LA VENTA (Transacción Rápida)
+        // ---------------------------------------------------------
+        try {
+            DB::beginTransaction();
+
+            $sucursalActiva = $this->getSucursalActiva();
+
+            if (!$sucursalActiva) {
+                throw new Exception('No tiene una sucursal activa');
+            }
+
+            if (!Auth::user()->sucursales->contains($sucursalActiva->id)) {
+                throw new Exception('No tiene permisos para vender en esta sucursal');
+            }
+
+            $tipoFactura = $request->tipo_factura;
+
+            // ... [Lógica de Series y Recibo se mantiene igual] ...
+            $numeroComprobante = null;
+            $serie = null;
+
+            if ($tipoFactura === 'FACT') {
+                $serieFel = SerieFel::where('sucursal_id', $sucursalActiva->id)
+                    ->where('tipo_documento', 'FACT')
+                    ->where('estado', 1)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$serieFel) throw new Exception('No hay serie FEL configurada');
+
+                $serieFel->numero_actual += 1;
+                $serieFel->save();
+                $serie = $serieFel->serie;
+                $numeroComprobante = str_pad($serieFel->numero_actual, 8, '0', STR_PAD_LEFT);
+            } else {
+                // Lógica Recibo
+                $ultimoRecibo = Venta::where('sucursal_id', $sucursalActiva->id)
+                    ->where('tipo_factura', 'RECI')
+                    ->lockForUpdate()
+                    ->orderBy('id', 'desc')
+                    ->first();
+                $numero = $ultimoRecibo ? (intval(substr($ultimoRecibo->numero_comprobante, -8)) + 1) : 1;
+                $numeroComprobante = 'REC-' . str_pad($numero, 8, '0', STR_PAD_LEFT);
+            }
+
+            // Crear Venta
+            $venta = Venta::create([
+                'sucursal_id' => $sucursalActiva->id,
+                'cliente_id' => $request->cliente_id,
+                'user_id' => Auth::id(),
+                'comprobante_id' => 1,
+                'fecha_hora' => now(),
+                'numero_comprobante' => $numeroComprobante,
+                'serie' => $serie,
+                'impuesto' => $request->impuesto,
+                'total' => $request->total,
+                'tipo_factura' => $tipoFactura,
+                'estado' => 1
+            ]);
+
+            // Procesar Productos
+            $arrayProducto_id = $request->get('arrayidproducto');
+            $arrayCantidad = $request->get('arraycantidad');
+            $arrayPrecioVenta = $request->get('arrayprecioventa');
+            $arrayDescuento = $request->get('arraydescuento', []);
+
+            for ($i = 0; $i < count($arrayProducto_id); $i++) {
+                $productoId = $arrayProducto_id[$i];
+                $cantidad = $arrayCantidad[$i];
+                $precioVenta = $arrayPrecioVenta[$i];
+                $descuento = $arrayDescuento[$i] ?? 0;
+
+                $inventario = InventarioSucursal::where('producto_id', $productoId)
+                    ->where('sucursal_id', $sucursalActiva->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$inventario || $inventario->stock_actual < $cantidad) {
+                    throw new Exception("Stock insuficiente para el producto ID: $productoId");
+                }
+
+                $venta->productos()->attach($productoId, [
+                    'cantidad' => $cantidad,
+                    'precio_venta' => $precioVenta,
+                    'descuento' => $descuento
+                ]);
+
+                $inventario->stock_actual -= $cantidad;
+                $inventario->save();
+
+                MovimientoInventario::create([
+                    'producto_id' => $productoId,
+                    'tipo_movimiento' => 'SALIDA',
+                    'cantidad' => $cantidad,
+                    'sucursal_origen_id' => $sucursalActiva->id,
+                    'venta_id' => $venta->id,
+                    'motivo' => 'Venta - ' . $numeroComprobante,
+                    'user_id' => Auth::id(),
+                    'fecha_movimiento' => now()
+                ]);
+            }
+
+            if ($request->cotizacion_id) {
+                $cotizacion = Cotizacion::find($request->cotizacion_id);
+                if($cotizacion) $cotizacion->update(['estado' => 'CONVERTIDA', 'venta_id' => $venta->id]);
+            }
+
+            DB::commit(); // <--- AQUÍ CERRAMOS LA CONEXIÓN DB PARA EVITAR EL ERROR 2006
+
+            $ventaGuardada = $venta; // Guardamos la instancia para usarla abajo
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Error al crear venta local: ' . $e->getMessage())->withInput();
+        }
+
+        // ---------------------------------------------------------
+        // PASO 2: CERTIFICACIÓN FEL (Fuera de la transacción principal)
+        // ---------------------------------------------------------
+        if ($request->tipo_factura === 'FACT' && $ventaGuardada) {
+            try {
+                $felService = new FELService($sucursalActiva);
+                $resultado = $felService->certificarFactura($ventaGuardada);
+
+                if ($resultado['success']) {
+                    // Si Laravel perdió la conexión durante la espera, update() intentará reconectar automáticamente
+                    $ventaGuardada->update([
+                        'numero_autorizacion_fel' => $resultado['uuid'],
+                        'fecha_certificacion_fel' => $resultado['fecha_certificacion'],
+                        'xml_fel' => $resultado['xml_certificado'],
+                        'serie' => $resultado['serie'],
+                        'numero_comprobante' => $resultado['numero']
+                    ]);
+
+                    // Limpieza para Log
+                    $respuestaLimpia = $resultado['respuesta_completa'];
+                    unset($respuestaLimpia['responseData1'], $respuestaLimpia['responseData2'], $respuestaLimpia['responseData3']);
+
+                    LogFel::create([
+                        'venta_id' => $ventaGuardada->id,
+                        'tipo_documento' => 'FACT',
+                        'serie' => $resultado['serie'],
+                        'numero' => $resultado['numero'],
+                        'uuid' => $resultado['uuid'],
+                        'respuesta_certificador' => json_encode($respuestaLimpia),
+                        'estado' => 'CERTIFICADO',
+                        'fecha_certificacion' => $resultado['fecha_certificacion'],
+                        'intentos' => 1
+                    ]);
+
+                } else {
+                    // FALLO FEL: REVERTIR LA VENTA QUE YA HABÍAMOS GUARDADO
+                    $errorMsg = $resultado['error'] ?? 'Desconocido';
+                    $this->revertirVentaLocal($ventaGuardada, $errorMsg);
+
+                    return redirect()->back()
+                        ->with('error', 'La venta NO se realizó. Falló la certificación FEL: ' . $errorMsg)
+                        ->withInput();
+                }
+
+            } catch (Exception $e) {
+                // FALLO CRÍTICO (Timeout, Conexión, etc): REVERTIR
+                $this->revertirVentaLocal($ventaGuardada, $e->getMessage());
+
+                return redirect()->back()
+                    ->with('error', 'Error de comunicación FEL (Timeout). La venta ha sido revertida. Intente de nuevo.')
+                    ->withInput();
+            }
+        }
+
+        // Éxito final
+        return redirect()->route('ventas.show', $ventaGuardada->id)
+            ->with('success', 'Venta registrada exitosamente');
+    }
+
     /**
      * Store a newly created resource in storage.
      */
-  public function store(StoreVentaRequest $request)
+  public function storeORIGIANL(StoreVentaRequest $request)
     {
+
+        $ventaGuardada = null;
+        $sucursalActiva = null;
+
         try {
             DB::beginTransaction();
 
@@ -310,6 +496,50 @@ class VentaController extends Controller
             return redirect()->back()
                 ->with('error', 'Error al registrar la venta: ' . $e->getMessage())
                 ->withInput();
+        }
+    }
+
+
+    /**
+     * Revertir venta localmente si falla FEL
+     */
+
+    private function revertirVentaLocal(Venta $venta, string $motivoError)
+    {
+        DB::beginTransaction();
+        try {
+            // 1. Devolver Stock
+            foreach ($venta->productos as $producto) {
+                $inventario = InventarioSucursal::where('producto_id', $producto->id)
+                    ->where('sucursal_id', $venta->sucursal_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($inventario) {
+                    $inventario->stock_actual += $producto->pivot->cantidad;
+                    $inventario->save();
+                }
+
+                // Registrar devolución en kardex
+                MovimientoInventario::create([
+                    'producto_id' => $producto->id,
+                    'tipo_movimiento' => 'DEVOLUCION',
+                    'cantidad' => $producto->pivot->cantidad,
+                    'sucursal_destino_id' => $venta->sucursal_id,
+                    'venta_id' => $venta->id,
+                    'motivo' => 'Reversión automática por fallo FEL: ' . substr($motivoError, 0, 100),
+                    'user_id' => Auth::id(),
+                    'fecha_movimiento' => now()
+                ]);
+            }
+
+            // 2. Marcar venta como anulada/cancelada
+            $venta->update(['estado' => 0]);
+
+            DB::commit();
+        } catch (Exception $e) {
+            DB::rollBack();
+            \Log::error('Error crítico al revertir venta local: ' . $e->getMessage());
         }
     }
 
