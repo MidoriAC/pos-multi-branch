@@ -49,11 +49,11 @@
                 <i class="fas fa-file"></i> Generar Ticket
             </a>
 
-            @if($venta->esFEL() && $venta->xml_fel)
+            {{-- @if($venta->esFEL() && $venta->xml_fel)
             <a href="{{ route('ventas.xml', $venta->id) }}" class="btn btn-info">
                 <i class="fas fa-file-code"></i> Descargar XML
             </a>
-            @endif
+            @endif --}}
 
             @can('eliminar-venta')
             @if($venta->puedeAnularse())
@@ -90,7 +90,7 @@
                     <div class="row mb-3">
                         <div class="col-5 info-label">Tipo de Documento:</div>
                         <div class="col-7 info-value">
-                            @if($venta->tipo_factura === 'fel')
+                            @if($venta->tipo_factura === 'FACT')
                                 <span class="badge bg-success">
                                     <i class="fas fa-file-invoice-dollar"></i> Factura Electrónica FEL
                                 </span>

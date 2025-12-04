@@ -237,8 +237,8 @@
                                             <i class="fas fa-edit"></i> Ajustar Stock
                                         </a>
                                     </li>
-                                    @endcan
-                                    <li>
+                                    @endcan --}}
+                                    {{-- <li>
                                         <a class="dropdown-item" href="{{route('inventario-sucursal.historial', $item->id)}}">
                                             <i class="fas fa-history"></i> Ver Historial
                                         </a>

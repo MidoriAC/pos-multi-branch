@@ -46,7 +46,7 @@ class VentaController extends Controller
             'logFel',
             'anulacionFel'
         ])
-        ->where('estado', 1)
+        // ->where('estado', 1)
         ->latest()
         ->get();
 
@@ -122,45 +122,43 @@ class VentaController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreVentaRequest $request)
+  public function store(StoreVentaRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            // Obtener sucursal activa
             $sucursalActiva = $this->getSucursalActiva();
 
             if (!$sucursalActiva) {
                 throw new Exception('No tiene una sucursal activa');
             }
 
-            // Validar que tenga acceso a la sucursal
             if (!Auth::user()->sucursales->contains($sucursalActiva->id)) {
                 throw new Exception('No tiene permisos para vender en esta sucursal');
             }
 
-            // Generar número de comprobante según el tipo
             $tipoFactura = $request->tipo_factura;
             $numeroComprobante = null;
             $serie = null;
 
+            // Manejo de Correlativos Internos
+            // NOTA: Aunque Digifact asigna su propia Serie/Numero, es bueno mantener un control interno
+            // hasta que se certifique.
             if ($tipoFactura === 'FACT') {
-                // Para FEL, obtener la serie activa
                 $serieFel = SerieFel::where('sucursal_id', $sucursalActiva->id)
                     ->where('tipo_documento', 'FACT')
                     ->where('estado', 1)
+                    ->lockForUpdate()
                     ->first();
 
                 if (!$serieFel) {
                     throw new Exception('No hay una serie FEL configurada para esta sucursal');
                 }
 
-                // Incrementar número
                 $serieFel->numero_actual += 1;
 
-                // Validar límite si existe
                 if ($serieFel->numero_final && $serieFel->numero_actual > $serieFel->numero_final) {
-                    throw new Exception('Se ha alcanzado el límite de la serie FEL');
+                    throw new Exception('Se ha alcanzado el límite de la serie FEL interna');
                 }
 
                 $serieFel->save();
@@ -169,9 +167,9 @@ class VentaController extends Controller
                 $numeroComprobante = str_pad($serieFel->numero_actual, 8, '0', STR_PAD_LEFT);
 
             } else {
-                // Para recibo simple, generar número secuencial
                 $ultimoRecibo = Venta::where('sucursal_id', $sucursalActiva->id)
                     ->where('tipo_factura', 'RECI')
+                    ->lockForUpdate()
                     ->orderBy('id', 'desc')
                     ->first();
 
@@ -179,7 +177,6 @@ class VentaController extends Controller
                 $numeroComprobante = 'REC-' . str_pad($numero, 8, '0', STR_PAD_LEFT);
             }
 
-            // Crear la venta
             $venta = Venta::create([
                 'sucursal_id' => $sucursalActiva->id,
                 'cliente_id' => $request->cliente_id,
@@ -194,7 +191,7 @@ class VentaController extends Controller
                 'estado' => 1
             ]);
 
-            // Recuperar arrays de productos
+            // Procesamiento de Productos
             $arrayProducto_id = $request->get('arrayidproducto');
             $arrayCantidad = $request->get('arraycantidad');
             $arrayPrecioVenta = $request->get('arrayprecioventa');
@@ -202,14 +199,12 @@ class VentaController extends Controller
 
             $sizeArray = count($arrayProducto_id);
 
-            // Procesar cada producto
             for ($i = 0; $i < $sizeArray; $i++) {
                 $productoId = $arrayProducto_id[$i];
                 $cantidad = $arrayCantidad[$i];
                 $precioVenta = $arrayPrecioVenta[$i];
                 $descuento = $arrayDescuento[$i] ?? 0;
 
-                // Verificar stock en inventario de sucursal
                 $inventario = InventarioSucursal::where('producto_id', $productoId)
                     ->where('sucursal_id', $sucursalActiva->id)
                     ->lockForUpdate()
@@ -224,23 +219,15 @@ class VentaController extends Controller
                     throw new Exception("Stock insuficiente para: {$producto->nombre}. Stock disponible: {$inventario->stock_actual}");
                 }
 
-                // Registrar en tabla pivot venta_producto
                 $venta->productos()->attach($productoId, [
                     'cantidad' => $cantidad,
                     'precio_venta' => $precioVenta,
                     'descuento' => $descuento
                 ]);
 
-                // Descontar del inventario de la sucursal
                 $inventario->stock_actual -= $cantidad;
                 $inventario->save();
 
-                // Actualizar stock general del producto
-                // $producto = Producto::find($productoId);
-                // $producto->stock -= $cantidad;
-                // $producto->save();
-
-                // Registrar movimiento de inventario
                 MovimientoInventario::create([
                     'producto_id' => $productoId,
                     'tipo_movimiento' => 'SALIDA',
@@ -253,7 +240,6 @@ class VentaController extends Controller
                 ]);
             }
 
-            // Si viene de cotización, marcarla como convertida
             if ($request->cotizacion_id) {
                 $cotizacion = Cotizacion::find($request->cotizacion_id);
                 $cotizacion->update([
@@ -263,53 +249,53 @@ class VentaController extends Controller
                 ]);
             }
 
-            // Si es FEL, certificar con el servicio
-            if ($tipoFactura === 'FACT') {
+            // --- LÓGICA FEL ---
+         if ($tipoFactura === 'FACT') {
                 $felService = new FELService($sucursalActiva);
                 $resultado = $felService->certificarFactura($venta);
 
                 if ($resultado['success']) {
-                    // Actualizar venta con datos FEL
+                    // ÉXITO: Actualizamos venta y Log
                     $venta->update([
                         'numero_autorizacion_fel' => $resultado['uuid'],
                         'fecha_certificacion_fel' => $resultado['fecha_certificacion'],
-                        'xml_fel' => $resultado['xml']
+                        'xml_fel' => $resultado['xml_certificado'],
+                        'serie' => $resultado['serie'],
+                        'numero_comprobante' => $resultado['numero'],
+                        'estado' => 1 // Venta Completada
                     ]);
 
-                    // Registrar en log FEL
+                    // Limpiar respuesta para Log ligero
+                    $respuestaLimpia = $resultado['respuesta_completa'];
+                    unset($respuestaLimpia['responseData1'], $respuestaLimpia['responseData2'], $respuestaLimpia['responseData3']);
+
                     LogFel::create([
                         'venta_id' => $venta->id,
                         'tipo_documento' => 'FACT',
-                        'serie' => $serie,
-                        'numero' => $numeroComprobante,
+                        'serie' => $resultado['serie'],
+                        'numero' => $resultado['numero'],
                         'uuid' => $resultado['uuid'],
-                        'respuesta_certificador' => json_encode($resultado['respuesta']),
+                        'respuesta_certificador' => json_encode($respuestaLimpia),
                         'estado' => 'CERTIFICADO',
                         'fecha_certificacion' => $resultado['fecha_certificacion'],
                         'intentos' => 1
                     ]);
+
                 } else {
-                    // Registrar error pero no revertir la venta
-                    LogFel::create([
-                        'venta_id' => $venta->id,
-                        'tipo_documento' => 'FACT',
-                        'serie' => $serie,
-                        'numero' => $numeroComprobante,
-                        'respuesta_certificador' => json_encode($resultado['error']),
-                        'estado' => 'ERROR',
-                        'intentos' => 1
-                    ]);
+                    // FALLO: HACEMOS ROLLBACK
+                    // Esto deshará la creación de la venta, el descuento de inventario, todo.
+                    DB::rollBack();
 
-                    DB::commit();
+                    // Registramos el error en logs del sistema (laravel.log) para que tú sepas qué pasó
+                    \Log::error('Fallo FEL Crítico (Venta cancelada): ' . json_encode($resultado['error']));
 
-                    return redirect()->route('ventas.show', $venta->id)
-                        ->with('warning', 'Venta registrada pero hubo un error al certificar FEL: ' . $resultado['error']);
+                    return redirect()->back()
+                        ->with('error', 'Error al certificar FEL: ' . ($resultado['error'] ?? 'Error desconocido'). '. La venta NO se ha realizado.')
+                        ->withInput(); // Devuelve los datos al formulario
                 }
             }
-
             DB::commit();
 
-            // Redirigir según el tipo de factura
             $mensaje = $tipoFactura === 'FACT'
                 ? 'Venta FEL registrada y certificada exitosamente'
                 : 'Venta registrada exitosamente';
@@ -341,7 +327,7 @@ class VentaController extends Controller
             'comprobante',
             'sucursal',
             'logFel',
-            'anulacionFel'
+            'anulacionFel',
         ]);
 
         return view('venta.show', compact('venta'));
@@ -389,7 +375,8 @@ class VentaController extends Controller
             $pdf = Pdf::loadView('venta.ticket', compact('venta'));
         }
 
-        $pdf->setPaper('letter');
+        // $pdf->setPaper('letter');
+        $pdf->setPaper([0, 0, 226, 800]);
 
         return $pdf->stream('venta-' . $venta->numero_comprobante . '.pdf');
     }
@@ -420,8 +407,7 @@ class VentaController extends Controller
                 ->with('error', 'Esta venta no puede ser anulada');
         }
 
-        // Verificar tiempo límite de anulación (configurable)
-        $diasLimite = config('ventas.dias_limite_anulacion', 3);
+        $diasLimite = config('ventas.dias_limite_anulacion', 15); // FEL GT suele permitir más días, ajustar según config
         $fechaLimite = Carbon::parse($venta->fecha_hora)->addDays($diasLimite);
 
         if (now()->gt($fechaLimite)) {
@@ -431,11 +417,10 @@ class VentaController extends Controller
 
         return view('venta.anular', compact('venta', 'diasLimite'));
     }
-
     /**
      * Procesar anulación de venta
      */
-    public function storeAnulacion(Request $request, Venta $venta)
+   public function storeAnulacion(Request $request, Venta $venta)
     {
         $request->validate([
             'motivo_anulacion' => 'required|string|max:500'
@@ -444,15 +429,13 @@ class VentaController extends Controller
         try {
             DB::beginTransaction();
 
-            // Verificar nuevamente el tiempo límite
-            $diasLimite = config('ventas.dias_limite_anulacion', 3);
+            $diasLimite = config('ventas.dias_limite_anulacion', 15);
             $fechaLimite = Carbon::parse($venta->fecha_hora)->addDays($diasLimite);
 
             if (now()->gt($fechaLimite)) {
                 throw new Exception("No se puede anular. Han pasado más de {$diasLimite} días");
             }
 
-            // Si es FEL, anular en el certificador
             if ($venta->esFEL()) {
                 $felService = new FELService($venta->sucursal);
                 $resultado = $felService->anularFactura($venta, $request->motivo_anulacion);
@@ -461,7 +444,6 @@ class VentaController extends Controller
                     throw new Exception('Error al anular en FEL: ' . $resultado['error']);
                 }
 
-                // Registrar anulación FEL
                 AnulacionFel::create([
                     'venta_id' => $venta->id,
                     'uuid_documento_anular' => $venta->numero_autorizacion_fel,
@@ -472,7 +454,6 @@ class VentaController extends Controller
                     'estado' => 'CERTIFICADO'
                 ]);
 
-                // Actualizar log FEL
                 if ($venta->logFel) {
                     $venta->logFel->update(['estado' => 'ANULADO']);
                 }
@@ -480,7 +461,6 @@ class VentaController extends Controller
 
             // Revertir inventario
             foreach ($venta->productos as $producto) {
-                // Devolver al inventario de sucursal
                 $inventario = InventarioSucursal::where('producto_id', $producto->id)
                     ->where('sucursal_id', $venta->sucursal_id)
                     ->lockForUpdate()
@@ -491,11 +471,6 @@ class VentaController extends Controller
                     $inventario->save();
                 }
 
-                // Devolver al stock general
-                $producto->stock += $producto->pivot->cantidad;
-                $producto->save();
-
-                // Registrar movimiento
                 MovimientoInventario::create([
                     'producto_id' => $producto->id,
                     'tipo_movimiento' => 'DEVOLUCION',
@@ -508,7 +483,6 @@ class VentaController extends Controller
                 ]);
             }
 
-            // Marcar venta como anulada (no se elimina)
             $venta->update(['estado' => 0]);
 
             DB::commit();
@@ -524,6 +498,8 @@ class VentaController extends Controller
                 ->with('error', 'Error al anular la venta: ' . $e->getMessage());
         }
     }
+
+
 
     /**
      * Obtener stock de producto en sucursal (AJAX)
@@ -618,7 +594,7 @@ class VentaController extends Controller
     /**
      * Reintentar certificación FEL
      */
-    public function reintentarCertificacion(Venta $venta)
+   public function reintentarCertificacion(Venta $venta)
     {
         if (!$venta->esFEL()) {
             return redirect()->back()
@@ -635,18 +611,23 @@ class VentaController extends Controller
             $resultado = $felService->certificarFactura($venta);
 
             if ($resultado['success']) {
+                // CAMBIO: Actualizamos con datos de Digifact
                 $venta->update([
                     'numero_autorizacion_fel' => $resultado['uuid'],
                     'fecha_certificacion_fel' => $resultado['fecha_certificacion'],
-                    'xml_fel' => $resultado['xml']
+                    'xml_fel' => $resultado['xml_certificado'], // Llave correcta
+                    'serie' => $resultado['serie'], // Llave correcta
+                    'numero_comprobante' => $resultado['numero'] // Llave correcta
                 ]);
 
                 if ($venta->logFel) {
                     $venta->logFel->update([
                         'uuid' => $resultado['uuid'],
+                        'serie' => $resultado['serie'],
+                        'numero' => $resultado['numero'],
                         'estado' => 'CERTIFICADO',
                         'fecha_certificacion' => $resultado['fecha_certificacion'],
-                        'respuesta_certificador' => json_encode($resultado['respuesta']),
+                        'respuesta_certificador' => json_encode($resultado['respuesta_completa']), // Llave correcta
                         'intentos' => $venta->logFel->intentos + 1
                     ]);
                 }
@@ -659,7 +640,7 @@ class VentaController extends Controller
                 }
 
                 return redirect()->back()
-                    ->with('error', 'Error al certificar: ' . $resultado['error']);
+                    ->with('error', 'Error al certificar: ' . ($resultado['error'] ?? 'Desconocido'));
             }
         } catch (Exception $e) {
             \Log::error('Error al reintentar certificación: ' . $e->getMessage());

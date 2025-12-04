@@ -1011,22 +1011,53 @@ $(document).ready(function() {
         cancelarVenta();
     });
 
-    $('#formVenta').submit(function(e) {
+   $('#formVenta').on('submit', function(e) {
+        e.preventDefault(); // Detenemos el envío normal momentáneamente
+
+        // 1. Validaciones básicas de UI
         if (total === 0) {
-            e.preventDefault();
             showModal('Debe agregar al menos un producto a la venta', 'error');
             return false;
         }
 
-        if (!$('#tipo_factura').val() && !@json($cotizacion ? true : false)) {
-            e.preventDefault();
-            showModal('Debe seleccionar un tipo de factura', 'error');
+        const tipoFactura = $('#tipo_factura').val();
+        // Si no viene de cotización y no ha seleccionado tipo
+        if (!tipoFactura && !@json($cotizacion ? true : false)) {
+            showModal('Debe seleccionar un tipo de factura (Recibo o FEL)', 'error');
             return false;
         }
 
-        return confirm('¿Está seguro de realizar esta venta?');
+        // 2. Confirmación y Pantalla de Carga
+        Swal.fire({
+            title: '¿Procesar Venta?',
+            text: "Verifique que los datos sean correctos.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Sí, cobrar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+
+                // MOSTRAR LOADING (Bloqueante)
+                let timerInterval;
+                Swal.fire({
+                    title: 'Procesando Venta',
+                    html: 'Conectando con certificador... <br><b>Por favor no cierre esta ventana.</b>',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Enviar el formulario manualmente ahora que mostramos el loading
+                this.submit();
+            }
+        });
     });
-});
+    });
 
 /**
  * Inicializar sistema de búsqueda híbrido

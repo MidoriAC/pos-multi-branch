@@ -2,337 +2,244 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Factura FEL - {{ $venta->numero_comprobante }}</title>
     <style>
-        * {
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 11px;
+            color: #333;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 10px;
-            line-height: 1.3;
-            color: #000;
         }
         .container {
-            width: 100%;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 15px;
+            padding: 30px;
         }
-        .header {
-            display: table;
+        /* Encabezado */
+        .header-table {
             width: 100%;
-            margin-bottom: 15px;
-            border: 2px solid #000;
+            margin-bottom: 20px;
+        }
+        .company-info h1 {
+            margin: 0 0 5px 0;
+            font-size: 18px;
+            color: #2c3e50;
+            text-transform: uppercase;
+        }
+        .company-info p {
+            margin: 2px 0;
+            font-size: 10px;
+            color: #555;
+        }
+        .invoice-details {
+            text-align: right;
+            border: 1px solid #ddd;
             padding: 10px;
-        }
-        .header-left {
-            display: table-cell;
-            width: 60%;
-            vertical-align: top;
-        }
-        .header-right {
-            display: table-cell;
-            width: 40%;
-            vertical-align: top;
-            text-align: center;
-            border-left: 2px solid #000;
-            padding-left: 10px;
-        }
-        .header h1 {
-            font-size: 16px;
-            margin-bottom: 5px;
-        }
-        .header-right h2 {
-            font-size: 14px;
-            background-color: #4CAF50;
-            color: white;
-            padding: 5px;
-            margin-bottom: 5px;
-        }
-        .fel-box {
-            background-color: #e8f5e9;
-            padding: 8px;
-            border: 1px solid #4CAF50;
-            margin-top: 8px;
-        }
-        .fel-box .fel-label {
-            font-size: 9px;
-            font-weight: bold;
-            color: #2e7d32;
-        }
-        .fel-box .fel-number {
-            font-size: 8px;
-            word-wrap: break-word;
-            margin-top: 3px;
-        }
-        .info-section {
-            display: table;
-            width: 100%;
-            margin-bottom: 15px;
-            border: 1px solid #000;
-        }
-        .info-box {
-            display: table-cell;
-            width: 50%;
-            padding: 8px;
-            border-right: 1px solid #000;
-        }
-        .info-box:last-child {
-            border-right: none;
-        }
-        .info-box h3 {
-            font-size: 11px;
-            margin-bottom: 5px;
-            background-color: #f5f5f5;
-            padding: 3px;
-            border-bottom: 1px solid #000;
-        }
-        .info-item {
-            margin-bottom: 3px;
-            font-size: 9px;
-        }
-        .info-label {
-            font-weight: bold;
-            display: inline-block;
-            width: 100px;
-        }
-        .productos-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            border: 1px solid #000;
-        }
-        .productos-table thead {
-            background-color: #333;
-            color: white;
-        }
-        .productos-table th,
-        .productos-table td {
-            padding: 5px;
-            text-align: left;
-            border: 1px solid #000;
-            font-size: 9px;
-        }
-        .productos-table tbody tr:nth-child(even) {
+            border-radius: 5px;
             background-color: #f9f9f9;
         }
-        .text-right {
-            text-align: right !important;
-        }
-        .text-center {
-            text-align: center !important;
-        }
-        .totales-box {
-            width: 45%;
-            float: right;
-            border: 2px solid #000;
-            padding: 8px;
-            margin-top: 10px;
-        }
-        .totales-row {
-            display: table;
-            width: 100%;
-            margin-bottom: 3px;
-            font-size: 10px;
-        }
-        .totales-label {
-            display: table-cell;
-            width: 50%;
-            text-align: right;
-            padding-right: 8px;
-            font-weight: bold;
-        }
-        .totales-value {
-            display: table-cell;
-            width: 50%;
-            text-align: right;
-            font-weight: bold;
-        }
-        .total-final {
+        .invoice-details h2 {
+            margin: 0 0 5px 0;
             font-size: 14px;
-            background-color: #4CAF50;
-            color: white;
-            padding: 8px;
+            color: #e67e22; /* Color naranja para destacar */
+            text-transform: uppercase;
+        }
+        .fel-data {
             margin-top: 5px;
-        }
-        .firma-box {
-            clear: both;
-            margin-top: 40px;
-            padding-top: 30px;
-        }
-        .firma {
-            width: 45%;
-            display: inline-block;
-            text-align: center;
-            border-top: 1px solid #000;
-            padding-top: 5px;
-            margin-top: 20px;
             font-size: 9px;
+            color: #7f8c8d;
         }
-        .footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 8px;
-            border-top: 1px solid #000;
-            padding-top: 8px;
-        }
-        .watermark {
+
+        /* Marca de agua ANULADO */
+        .watermark-anulado {
             position: fixed;
-            top: 50%;
+            top: 40%;
             left: 50%;
             transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 120px;
-            color: rgba(255, 0, 0, 0.08);
-            z-index: -1;
+            font-size: 100px;
+            color: rgba(220, 53, 69, 0.15); /* Rojo transparente */
+            border: 10px solid rgba(220, 53, 69, 0.15);
+            padding: 10px 40px;
+            z-index: -1000;
             font-weight: bold;
+            pointer-events: none;
+            text-transform: uppercase;
         }
-        .anulado-box {
-            border: 3px solid #dc3545;
-            background-color: #f8d7da;
+
+        /* Sección Cliente */
+        .client-section {
+            background-color: #f1f2f6;
             padding: 10px;
-            margin: 15px 0;
-            text-align: center;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2c3e50;
         }
-        @page {
-            margin: 0.8cm;
+        .client-section h3 {
+            margin: 0 0 5px 0;
+            font-size: 11px;
+            color: #2c3e50;
+            text-transform: uppercase;
+        }
+
+        /* Tabla Productos */
+        .products-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .products-table th {
+            background-color: #2c3e50;
+            color: #fff;
+            padding: 8px;
+            text-align: left;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .products-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 10px;
+        }
+        .products-table tr:nth-child(even) {
+            background-color: #fcfcfc;
+        }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+
+        /* Totales */
+        .totals-container {
+            width: 40%;
+            float: right;
+        }
+        .total-row {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .total-row.final {
+            background-color: #2c3e50;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+        .total-label { display: inline-block; width: 50%; }
+        .total-value { display: inline-block; width: 45%; text-align: right; }
+
+        /* Información de Anulación (Visible solo si anulada) */
+        .anulacion-alert {
+            border: 1px solid #e74c3c;
+            background-color: #fdedec;
+            color: #c0392b;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            font-size: 10px;
+        }
+
+        /* Footer y Firmas */
+        .signatures {
+            margin-top: 60px;
+            width: 100%;
+        }
+        .signature-line {
+            width: 40%;
+            border-top: 1px solid #ccc;
+            text-align: center;
+            padding-top: 5px;
+            display: inline-block;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 8px;
+            color: #7f8c8d;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
         }
     </style>
 </head>
 <body>
-    @if($venta->anulacionFel)
-    <div class="watermark">ANULADO</div>
+
+    @if($venta->estado == 0 || $venta->anulacionFel)
+        <div class="watermark-anulado">ANULADO</div>
     @endif
 
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <h1>{{ $venta->sucursal->nombre }}</h1>
-                <div style="margin-top: 5px;">
-                    <div><strong>NIT:</strong> {{ $venta->sucursal->configuracionFel->nit_emisor ?? 'N/A' }}</div>
-                    <div><strong>Dirección:</strong> {{ $venta->sucursal->direccion }}</div>
-                    <div><strong>Teléfono:</strong> {{ $venta->sucursal->telefono }}</div>
-                    <div><strong>Email:</strong> {{ $venta->sucursal->email }}</div>
-                </div>
-            </div>
-            <div class="header-right">
-                <h2>FACTURA ELECTRÓNICA</h2>
-                <div style="font-size: 11px; font-weight: bold;">
-                    N° {{ $venta->numero_comprobante }}
-                </div>
-                @if($venta->serie)
-                <div style="font-size: 10px; margin-top: 3px;">
-                    Serie: <strong>{{ $venta->serie }}</strong>
-                </div>
-                @endif
 
-                @if($venta->numero_autorizacion_fel)
-                <div class="fel-box">
-                    <div class="fel-label">AUTORIZACIÓN FEL:</div>
-                    <div class="fel-number">{{ $venta->numero_autorizacion_fel }}</div>
-                    @if($venta->fecha_certificacion_fel)
-                    <div style="font-size: 8px; margin-top: 3px;">
-                        Certificado: {{ $venta->fecha_certificacion_fel->format('d/m/Y H:i:s') }}
+        <table class="header-table">
+            <tr>
+                <td width="60%" class="company-info">
+                    {{-- <img src="{{ public_path('img/logo.png') }}" style="height: 50px; margin-bottom: 10px;"> --}}
+                    <h1>{{ $venta->sucursal->nombre }}</h1>
+                    <p><strong>NIT:</strong> {{ $venta->sucursal->configuracionFel->nit_emisor ?? 'N/A' }}</p>
+                    <p>{{ $venta->sucursal->direccion }}</p>
+                    <p>Tel: {{ $venta->sucursal->telefono }} | Email: {{ $venta->sucursal->email }}</p>
+                </td>
+                <td width="40%">
+                    <div class="invoice-details">
+                        <h2>Factura Electrónica</h2>
+                        <div><strong>No.</strong> {{ $venta->numero_comprobante }}</div>
+                        @if($venta->serie)
+                            <div><strong>Serie:</strong> {{ $venta->serie }}</div>
+                        @endif
+                        <div><strong>Fecha:</strong> {{ $venta->fecha_hora->format('d/m/Y H:i') }}</div>
+
+                        @if($venta->numero_autorizacion_fel)
+                            <div class="fel-data" style="margin-top: 8px; padding-top: 5px; border-top: 1px dashed #ccc;">
+                                <strong>UUID:</strong><br>{{ $venta->numero_autorizacion_fel }}
+                            </div>
+                        @endif
                     </div>
-                    @endif
-                </div>
-                @endif
-            </div>
-        </div>
+                </td>
+            </tr>
+        </table>
 
-        @if($venta->anulacionFel)
-        <div class="anulado-box">
-            <h2 style="color: #dc3545; font-size: 16px; margin-bottom: 5px;">FACTURA ANULADA</h2>
-            <div><strong>Fecha:</strong> {{ $venta->anulacionFel->fecha_anulacion->format('d/m/Y H:i:s') }}</div>
-            <div><strong>Motivo:</strong> {{ $venta->anulacionFel->motivo }}</div>
-            @if($venta->anulacionFel->numero_autorizacion_anulacion)
-            <div style="font-size: 8px; margin-top: 5px;">
-                <strong>Autorización Anulación:</strong> {{ $venta->anulacionFel->numero_autorizacion_anulacion }}
-            </div>
+        @if($venta->estado == 0 || $venta->anulacionFel)
+        <div class="anulacion-alert">
+            <strong>DOCUMENTO ANULADO</strong><br>
+            @if($venta->anulacionFel)
+                Fecha de Anulación: {{ $venta->anulacionFel->fecha_anulacion->format('d/m/Y H:i') }}<br>
+                Motivo: {{ $venta->anulacionFel->motivo }}
+            @else
+                Este documento ha sido cancelado internamente.
             @endif
         </div>
         @endif
 
-        <!-- Información -->
-        <div class="info-section">
-            <div class="info-box">
-                <h3>DATOS DE LA FACTURA</h3>
-                <div class="info-item">
-                    <span class="info-label">Fecha de Emisión:</span>
-                    {{ $venta->fecha_hora->format('d/m/Y H:i:s') }}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Vendedor:</span>
-                    {{ $venta->user->name }}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Tipo de Pago:</span>
-                    Contado
-                </div>
-            </div>
-
-            <div class="info-box">
-                <h3>DATOS DEL RECEPTOR</h3>
-                <div class="info-item">
-                    <span class="info-label">Nombre/Razón Social:</span>
-                    <strong>{{ $venta->cliente->persona->razon_social }}</strong>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">NIT:</span>
-                    {{ $venta->cliente->persona->nit }}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Dirección:</span>
-                    {{ $venta->cliente->persona->direccion }}
-                </div>
-                @if($venta->cliente->persona->email)
-                <div class="info-item">
-                    <span class="info-label">Email:</span>
-                    {{ $venta->cliente->persona->email }}
-                </div>
-                @endif
-            </div>
+        <div class="client-section">
+            <table width="100%">
+                <tr>
+                    <td width="10%"><h3>Cliente:</h3></td>
+                    <td width="50%">{{ $venta->cliente->persona->razon_social }}</td>
+                    <td width="10%"><h3>NIT:</h3></td>
+                    <td width="30%">{{ $venta->cliente->persona->nit ?? 'CF' }}</td>
+                </tr>
+                <tr>
+                    <td><h3>Dirección:</h3></td>
+                    <td colspan="3">{{ $venta->cliente->persona->direccion ?? 'Ciudad' }}</td>
+                </tr>
+            </table>
         </div>
 
-        <!-- Tabla de Productos -->
-        <table class="productos-table">
+        <table class="products-table">
             <thead>
                 <tr>
-                    <th width="7%">Cant.</th>
-                    <th width="8%">U.M.</th>
-                    <th width="10%">Código</th>
-                    <th width="40%">Descripción</th>
-                    <th width="13%" class="text-right">Precio Unit.</th>
-                    <th width="9%" class="text-right">Desc.</th>
-                    <th width="13%" class="text-right">Total</th>
+                    <th width="10%" class="text-center">CANT</th>
+                    <th width="50%">DESCRIPCIÓN</th>
+                    <th width="20%" class="text-right">PRECIO UNIT.</th>
+                    <th width="20%" class="text-right">TOTAL</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach($venta->productos as $producto)
                 <tr>
                     <td class="text-center">{{ $producto->pivot->cantidad }}</td>
-                    <td class="text-center">
-                        {{ $producto->unidadMedida->abreviatura ?? 'UNI' }}
-                    </td>
-                    <td>{{ $producto->codigo }}</td>
                     <td>
-                        <strong>{{ $producto->nombre }}</strong>
-                        @if($producto->marca)
-                            <br><span style="font-size: 8px;">{{ $producto->marca->caracteristica->nombre }}</span>
+                        {{ $producto->nombre }}
+                        @if($producto->pivot->descuento > 0)
+                            <br><span style="font-size: 8px; color: #e67e22;">(Desc: Q {{ number_format($producto->pivot->descuento, 2) }})</span>
                         @endif
                     </td>
                     <td class="text-right">Q {{ number_format($producto->pivot->precio_venta, 2) }}</td>
-                    <td class="text-right">
-                        @if($producto->pivot->descuento > 0)
-                            Q {{ number_format($producto->pivot->descuento, 2) }}
-                        @else
-                            -
-                        @endif
-                    </td>
                     <td class="text-right">
                         Q {{ number_format(($producto->pivot->cantidad * $producto->pivot->precio_venta) - $producto->pivot->descuento, 2) }}
                     </td>
@@ -341,43 +248,36 @@
             </tbody>
         </table>
 
-        <!-- Totales -->
-        <div class="totales-box">
-            <div class="totales-row">
-                <div class="totales-label">SUBTOTAL:</div>
-                <div class="totales-value">Q {{ number_format($venta->total - $venta->impuesto, 2) }}</div>
+        <div class="totals-container">
+            <div class="total-row">
+                <span class="total-label">Subtotal:</span>
+                <span class="total-value">Q {{ number_format($venta->total - $venta->impuesto, 2) }}</span>
             </div>
-            <div class="totales-row">
-                <div class="totales-label">IVA (12%):</div>
-                <div class="totales-value">Q {{ number_format($venta->impuesto, 2) }}</div>
+            <div class="total-row">
+                <span class="total-label">IVA (12%):</span>
+                <span class="total-value">Q {{ number_format($venta->impuesto, 2) }}</span>
             </div>
-            <div class="totales-row total-final">
-                <div class="totales-label">TOTAL:</div>
-                <div class="totales-value">Q {{ number_format($venta->total, 2) }}</div>
-            </div>
-        </div>
-
-        <!-- Firmas -->
-        <div class="firma-box">
-            <div class="firma" style="float: left;">
-                RECIBÍ CONFORME<br>
-                <strong>Cliente</strong>
-            </div>
-            <div class="firma" style="float: right;">
-                ENTREGUÉ CONFORME<br>
-                <strong>Vendedor</strong>
+            <div class="total-row final">
+                <span class="total-label">TOTAL:</span>
+                <span class="total-value">Q {{ number_format($venta->total, 2) }}</span>
             </div>
         </div>
 
-        <!-- Footer -->
-        <div class="footer">
-            <p><strong>FACTURA ELECTRÓNICA CERTIFICADA POR SAT</strong></p>
+        <div style="clear: both;"></div>
+
+        <div class="signatures">
+            <div class="signature-line" style="float: left;">
+                Firma Cliente
+            </div>
+            <div class="signature-line" style="float: right;">
+                Firma Emisor
+            </div>
+        </div>
+
+        <div class="footer" style="clear: both;">
             <p>Sujeto a pagos trimestrales ISR | Régimen FEL</p>
-            <p>Documento generado electrónicamente el {{ now()->format('d/m/Y H:i:s') }}</p>
-            <p style="margin-top: 5px; font-size: 7px;">
-                Para verificar la autenticidad de este documento, ingrese a:<br>
-                https://portal.sat.gob.gt/portal/ con el número de autorización
-            </p>
+            <p>Certificador: {{ $venta->sucursal->configuracionFel->proveedor_fel ?? 'DIGIFACT' }} | NIT: {{ $venta->sucursal->configuracionFel->nit_emisor }}</p>
+            <p>Documento generado el {{ now()->format('d/m/Y H:i:s') }}</p>
         </div>
     </div>
 </body>

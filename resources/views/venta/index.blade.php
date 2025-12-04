@@ -148,7 +148,7 @@
                             @endif
                         </td>
                         <td>
-                            @if($venta->tipo_factura === 'fel')
+                            @if($venta->tipo_factura === 'FACT')
                                 <span class="badge badge-tipo-factura bg-success">
                                     <i class="fas fa-file-invoice-dollar"></i> FEL
                                 </span>
@@ -217,13 +217,13 @@
                                         </li>
                                         @endcan
 
-                                        @if($venta->esFEL() && $venta->xml_fel)
+                                        {{-- @if($venta->esFEL() && $venta->xml_fel)
                                         <li>
                                             <a class="dropdown-item" href="#" onclick="descargarXML({{ $venta->id }})">
                                                 <i class="fas fa-file-code"></i> Descargar XML
                                             </a>
                                         </li>
-                                        @endif
+                                        @endif --}}
 
                                         <li><hr class="dropdown-divider"></li>
 

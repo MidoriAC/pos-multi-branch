@@ -4,15 +4,16 @@ namespace App\Services;
 
 use App\Models\Venta;
 use App\Models\Sucursal;
-use App\Models\ConfiguracionFel;
 use Exception;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class FELService
 {
     private $sucursal;
     private $configuracion;
+    private $baseUrl;
 
     public function __construct(Sucursal $sucursal)
     {
@@ -22,316 +23,365 @@ class FELService
         if (!$this->configuracion || !$this->configuracion->estado) {
             throw new Exception('La sucursal no tiene configuración FEL activa');
         }
+
+        $this->baseUrl = $this->configuracion->ambiente === 'PRODUCCION'
+            ? 'https://nucgt.digifact.com/gt.com.apinuc/api'
+            : 'https://testnucgt.digifact.com/api';
+    }
+
+ /**
+     * Obtener Token de Autenticación (Login)
+     * Doc: Seccion 2.1.2
+     */
+    private function obtenerToken()
+    {
+        // Cachear el token para no pedirlo en cada factura (dura aprox 24h)
+        $cacheKey = 'fel_token_' . $this->sucursal->id;
+
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        // 1. Limpiar el NIT (quitar guiones)
+        $nitLimpio = str_replace('-', '', $this->configuracion->nit_emisor);
+
+        // 2. Rellenar con ceros a la izquierda hasta 12 dígitos
+        $nitPad = str_pad($nitLimpio, 12, "0", STR_PAD_LEFT);
+
+        // 3. Obtener el usuario de la BD
+        $usuarioBD = trim($this->configuracion->usuario_certificador);
+
+        // 4. Verificar si ya tiene el formato "GT." o si es solo el usuario
+        // Digifact requiere: GT.0000NIT.USUARIO
+        if (strpos($usuarioBD, 'GT.') === 0) {
+            // en la BD ya lo GUARDA completo
+            $usernameFinal = $usuarioBD;
+        } else {
+            // Si en la BD solo dice "JULIOCIF", SE FORMATEA
+            $usernameFinal = "GT.{$nitPad}.{$usuarioBD}";
+        }
+
+        Log::info("Solicitando Token con Usuario: {$usernameFinal}");
+
+        $response = Http::post("{$this->baseUrl}/login/get_token", [
+            'Username' => $usernameFinal,
+            'Password' => $this->configuracion->clave_certificador
+        ]);
+
+        if ($response->successful()) {
+            $token = $response->json()['Token'] ?? null;
+
+            if (!$token) {
+                 throw new Exception('Digifact no devolvió el Token en la respuesta JSON.');
+            }
+
+            // Guardar en cache por 60 minutos
+            Cache::put($cacheKey, $token, 60 * 60);
+            return $token;
+        }
+
+        // Si falla,  qué devolvió Digifact para depurar
+        throw new Exception('Error al obtener Token Digifact: ' . $response->body());
     }
 
     /**
-     * Certificar factura con el certificador FEL
+     * Certificar Factura (NUC V2 JSON)
+     * Doc: Seccion 2.1.4 (V2)
      */
     public function certificarFactura(Venta $venta)
     {
+        Log::info("--- INICIO CERTIFICACIÓN FEL --- Venta ID: {$venta->id}");
         try {
-            // Construir el XML de la factura
-            $xml = $this->construirXMLFactura($venta);
+            Log::info("Solicitando Token a Digifact...");
+            $token = $this->obtenerToken();
+            Log::info("Token obtenido correctamente (oculto por seguridad).");
 
-            // Enviar al certificador según el proveedor
-            $resultado = $this->enviarACertificador($xml, 'FACT');
+            Log::info("Construyendo JSON NUC...");
+            $nucData = $this->construirJSONNuc($venta);
 
-            if ($resultado['success']) {
+            Log::info("Payload JSON enviado a Digifact:", $nucData);
+            // Endpoint para transformar NUC JSON a FEL (Doc Pág 8)
+            $url = "{$this->baseUrl}/v2/transform/nuc_json";
+
+            // Parámetros Query requeridos
+            // El NIT debe ir con ceros a la izquierda hasta completar 12 dígitos
+            $nitEmisorPad = str_pad($this->configuracion->nit_emisor, 12, "0", STR_PAD_LEFT);
+
+            Log::info("Enviando petición a: {$url}");
+        Log::info("NIT Emisor: {$nitEmisorPad} | Usuario: {$this->configuracion->usuario_certificador}");
+
+            $response = Http::timeout(60)
+                ->withHeaders([
+                'Authorization' => $token,
+                'Content-Type' => 'application/json'
+            ])->post("$url?TAXID={$nitEmisorPad}&USERNAME={$this->configuracion->usuario_certificador}&FORMAT=XML HTML PDF", $nucData);
+
+            $result = $response->json();
+            Log::info("--- RESPUESTA DIGIFACT ---");
+        Log::info("Status Code HTTP: " . $response->status());
+        Log::info("Cuerpo Respuesta:", $result);
+
+            // Código 1 significa éxito en Digifact (Doc Pág 37)
+            if ($response->successful() && isset($result['code']) && $result['code'] == 1) {
+
+                Log::info("¡CERTIFICACIÓN EXITOSA!");
+            Log::info("UUID: " . ($result['authNumber'] ?? 'N/A'));
+            Log::info("Serie: " . ($result['batch'] ?? 'N/A'));
+            Log::info("Numero: " . ($result['serial'] ?? 'N/A'));
                 return [
                     'success' => true,
-                    'uuid' => $resultado['uuid'],
-                    'fecha_certificacion' => $resultado['fecha_certificacion'],
-                    'xml' => $resultado['xml_certificado'],
-                    'respuesta' => $resultado['respuesta_completa']
+                    'uuid' => $result['authNumber'], // UUID
+                    'serie' => $result['batch'],
+                    'numero' => $result['serial'],
+                    'fecha_certificacion' => $result['enrolledTimeStamp'], // Fecha Cert
+                    'xml_certificado' => $result['responseData1'], // XML en Base64
+                    'html_certificado' => $result['responseData2'] ?? null,
+                    'pdf_certificado' => $result['responseData3'] ?? null,
+                    'respuesta_completa' => $result
                 ];
             }
 
+            $errorMsg = $result['message'] ?? 'Error desconocido';
+        $descMsg = $result['description'] ?? '';
+        Log::error("FALLO EN CERTIFICACIÓN: $errorMsg - $descMsg");
+
             return [
                 'success' => false,
-                'error' => $resultado['error']
+                'error' => $result['message'] ?? 'Error desconocido de Digifact: ' . $response->body()
             ];
 
         } catch (Exception $e) {
-            Log::error('Error al certificar FEL: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
+            Log::error('Error FEL Digifact: ' . $e->getMessage());
+            Log::error('EXCEPCIÓN CRÍTICA FEL: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
     /**
-     * Anular factura FEL
+     * Anular Factura
+     * Doc: Seccion 2.1.5 CANCEL FEL
+     */
+   /**
+     * Anular Factura
+     * Doc: Seccion 2.1.5 CANCEL FEL
      */
     public function anularFactura(Venta $venta, string $motivo)
     {
+        Log::info("--- INICIO ANULACIÓN FEL --- Venta ID: {$venta->id} | UUID A Anular: {$venta->numero_autorizacion_fel}");
+
         try {
             if (!$venta->numero_autorizacion_fel) {
-                throw new Exception('La venta no tiene un UUID de FEL para anular');
+                throw new Exception('La venta no tiene UUID para anular');
             }
 
-            // Construir XML de anulación
-            $xml = $this->construirXMLAnulacion($venta, $motivo);
+            Log::info("Solicitando Token para anulación...");
+            $token = $this->obtenerToken();
 
-            // Enviar al certificador
-            $resultado = $this->enviarACertificador($xml, 'ANULACION', $venta->numero_autorizacion_fel);
+            // Preparación de datos
+            // NOTA: Digifact a veces pide el NIT con ceros (str_pad) en este endpoint específico.
+            // Si falla con "NIT Inválido", probaremos usar ltrim($nit, '0') como en la certificación.
+            $nitEmisorPad = str_pad($this->configuracion->nit_emisor, 12, "0", STR_PAD_LEFT);
 
-            if ($resultado['success']) {
+            // Receptor: Si es CF, se envía 'CF', si no, el NIT
+            $idReceptor = $venta->cliente->persona->nit ?? 'CF';
+            if(strtoupper($idReceptor) == 'CF' || empty($idReceptor)) $idReceptor = 'CF';
+
+            // Construcción del Payload
+            $payload = [
+                'Taxid' => $nitEmisorPad,
+                'Autorizacion' => $venta->numero_autorizacion_fel,
+                'IdReceptor' => $idReceptor,
+                // Fecha de emisión original del documento formato ISO
+                'FechaEmisionDocumentoAnular' => $venta->fecha_hora->format('Y-m-d\TH:i:s'),
+                'MotivoAnulacion' => $motivo,
+                'Username' => $this->configuracion->usuario_certificador // Usuario API
+            ];
+
+            Log::info("Payload Anulación enviado a Digifact:", $payload);
+
+            $url = "{$this->baseUrl}/CancelFelGT";
+            Log::info("Enviando petición POST a: $url");
+
+            $response = Http::withHeaders([
+                'Authorization' => $token,
+                'Content-Type' => 'application/json'
+            ])->post($url, $payload);
+
+            $result = $response->json();
+
+            Log::info("--- RESPUESTA DIGIFACT ANULACIÓN ---");
+            Log::info("Status Code HTTP: " . $response->status());
+            Log::info("Cuerpo Respuesta:", $result);
+
+            // Validar respuesta (Doc Pág 11 -> Codigo 1 es Éxito)
+            if ($response->successful() && isset($result['Codigo']) && $result['Codigo'] == 1) {
+
+                Log::info("¡ANULACIÓN EXITOSA!");
+                Log::info("Fecha Certificación Anulación: " . ($result['Fecha_de_certificacion'] ?? 'N/A'));
+
                 return [
                     'success' => true,
-                    'uuid_anulacion' => $resultado['uuid'],
-                    'fecha_anulacion' => $resultado['fecha_certificacion']
+                    'uuid_anulacion' => $result['Autorizacion'] ?? 'N/A',
+                    'fecha_anulacion' => $result['Fecha_de_certificacion'] ?? now(),
+                    'xml_anulacion' => $result['ResponseDATA1'] ?? null
                 ];
             }
 
+            // Manejo de error
+            $mensajeError = $result['Mensaje'] ?? 'Error desconocido en anulación';
+            Log::error("FALLO EN ANULACIÓN: $mensajeError");
+
             return [
                 'success' => false,
-                'error' => $resultado['error']
+                'error' => $mensajeError
             ];
 
         } catch (Exception $e) {
-            Log::error('Error al anular FEL: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
+            Log::error('EXCEPCIÓN CRÍTICA ANULACIÓN: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
-
-    /**
-     * Construir XML de la factura
+/**
+     * Construir Estructura NUC (JSON) - CORREGIDO V10 (Final - Claves de Frases)
+     * Se corrige 'CodigoEscenario' por 'Escenario' según validador Digifact
      */
-    private function construirXMLFactura(Venta $venta)
+    private function construirJSONNuc(Venta $venta)
     {
-        $venta->load(['productos', 'cliente.persona', 'sucursal']);
-
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>';
-        $xml .= '<dte:GTDocumento xmlns:dte="http://www.sat.gob.gt/dte/fel/0.2.0" Version="0.1">';
-
-        // SAT
-        $xml .= '<dte:SAT ClaseDocumento="dte">';
-        $xml .= '<dte:DTE ID="DatosCertificados">';
-
-        // Emisor
-        $xml .= '<dte:DatosEmision ID="DatosEmision">';
-        $xml .= '<dte:DatosGenerales Tipo="FACT" FechaHoraEmision="' . $venta->fecha_hora->format('Y-m-d\TH:i:s') . '" CodigoMoneda="GTQ"/>';
-
-        $xml .= '<dte:Emisor NITEmisor="' . $this->configuracion->nit_emisor . '" NombreEmisor="' . htmlspecialchars($this->configuracion->nombre_emisor) . '" CodigoEstablecimiento="' . $this->configuracion->codigo_establecimiento . '" NombreComercial="' . htmlspecialchars($this->configuracion->nombre_comercial) . '" AfiliacionIVA="' . $this->configuracion->afiliacion_iva . '">';
-        $xml .= '<dte:DireccionEmisor>';
-        $xml .= '<dte:Direccion>' . htmlspecialchars($venta->sucursal->direccion) . '</dte:Direccion>';
-        $xml .= '<dte:CodigoPostal>01001</dte:CodigoPostal>';
-        $xml .= '<dte:Municipio>Guatemala</dte:Municipio>';
-        $xml .= '<dte:Departamento>Guatemala</dte:Departamento>';
-        $xml .= '<dte:Pais>GT</dte:Pais>';
-        $xml .= '</dte:DireccionEmisor>';
-        $xml .= '</dte:Emisor>';
-
-        // Receptor
+        $venta->load(['productos.unidadMedida', 'cliente.persona', 'sucursal']);
         $cliente = $venta->cliente->persona;
-        $xml .= '<dte:Receptor IDReceptor="' . ($cliente->nit ?? 'CF') . '" NombreReceptor="' . htmlspecialchars($cliente->razon_social) . '">';
-        $xml .= '<dte:DireccionReceptor>';
-        $xml .= '<dte:Direccion>' . htmlspecialchars($cliente->direccion) . '</dte:Direccion>';
-        $xml .= '<dte:CodigoPostal>01001</dte:CodigoPostal>';
-        $xml .= '<dte:Municipio>Guatemala</dte:Municipio>';
-        $xml .= '<dte:Departamento>Guatemala</dte:Departamento>';
-        $xml .= '<dte:Pais>GT</dte:Pais>';
-        $xml .= '</dte:DireccionReceptor>';
-        $xml .= '</dte:Receptor>';
 
-        // Items
-        $xml .= '<dte:Items>';
-        $lineaItem = 1;
+        // 1. Limpieza de NITS
+        $nitReceptor = $cliente->nit ?? 'CF';
+        $nitReceptor = strtoupper(str_replace(['-', ' '], '', $nitReceptor));
+        if (empty($nitReceptor) || $nitReceptor == 'CF') {
+            $nitReceptor = 'CF';
+        }
 
+        $nitEmisor = str_replace('-', '', $this->configuracion->nit_emisor);
+        $nitEmisor = ltrim($nitEmisor, '0');
+        if (empty($nitEmisor)) $nitEmisor = str_replace('-', '', $this->configuracion->nit_emisor);
+
+        // 2. Lógica de Frases
+        $afiliacion = $this->configuracion->afiliacion_iva ?? 'GEN';
+        $frases = [];
+
+        if ($afiliacion === 'GEN') {
+            $frases = [
+                ['Name' => 'TipoFrase', 'Value' => '1', 'Data' => '1'],
+                //  'Escenario' en lugar de 'CodigoEscenario'
+                ['Name' => 'Escenario', 'Value' => '1', 'Data' => '1']
+            ];
+        } elseif ($afiliacion === 'PEQ') {
+            $frases = [
+                ['Name' => 'TipoFrase', 'Value' => '4', 'Data' => '1'],
+                // 'Escenario' en lugar de 'CodigoEscenario'
+                ['Name' => 'Escenario', 'Value' => '1', 'Data' => '1']
+            ];
+        }
+
+        // 3. Procesamiento de Ítems
+        $itemsArray = [];
         foreach ($venta->productos as $producto) {
             $cantidad = $producto->pivot->cantidad;
             $precioUnitario = $producto->pivot->precio_venta;
             $descuento = $producto->pivot->descuento;
-            $subtotal = ($cantidad * $precioUnitario) - $descuento;
 
-            $xml .= '<dte:Item BienOServicio="B" NumeroLinea="' . $lineaItem . '">';
-            $xml .= '<dte:Cantidad>' . $cantidad . '</dte:Cantidad>';
-            $xml .= '<dte:UnidadMedida>' . ($producto->unidadMedida->codigo_fel ?? 'UNI') . '</dte:UnidadMedida>';
-            $xml .= '<dte:Descripcion>' . htmlspecialchars($producto->nombre) . '</dte:Descripcion>';
-            $xml .= '<dte:PrecioUnitario>' . number_format($precioUnitario, 2, '.', '') . '</dte:PrecioUnitario>';
-            $xml .= '<dte:Precio>' . number_format($subtotal, 2, '.', '') . '</dte:Precio>';
+            $totalLinea = ($cantidad * $precioUnitario) - $descuento;
+            $montoGravable = $totalLinea / 1.12;
+            $montoImpuesto = $totalLinea - $montoGravable;
+
+            $um = $producto->unidadMedida->codigo_fel ?? 'UNI';
+            if(strlen($um) > 3) $um = 'UNI';
+
+            $item = [
+                'Description' => substr($producto->nombre, 0, 500),
+                'Type' => 'B',
+                'Qty' => number_format($cantidad, 2, '.', ''),
+                'UnitOfMeasure' => $um,
+                'Price' => number_format($precioUnitario, 2, '.', ''),
+                'Taxes' => [
+                    'Tax' => [[
+                        'Code' => '1',
+                        'Description' => 'IVA',
+                        'TaxableAmount' => number_format($montoGravable, 2, '.', ''),
+                        'Amount' => number_format($montoImpuesto, 2, '.', '')
+                    ]]
+                ],
+                'Totals' => [
+                    'TotalItem' => number_format($totalLinea, 2, '.', '')
+                ]
+            ];
 
             if ($descuento > 0) {
-                $xml .= '<dte:Descuento>' . number_format($descuento, 2, '.', '') . '</dte:Descuento>';
-            }
-
-            // Impuestos
-            $xml .= '<dte:Impuestos>';
-            $xml .= '<dte:Impuesto>';
-            $xml .= '<dte:NombreCorto>IVA</dte:NombreCorto>';
-            $xml .= '<dte:CodigoUnidadGravable>1</dte:CodigoUnidadGravable>';
-            $xml .= '<dte:MontoGravable>' . number_format($subtotal / 1.12, 2, '.', '') . '</dte:MontoGravable>';
-            $xml .= '<dte:MontoImpuesto>' . number_format($subtotal - ($subtotal / 1.12), 2, '.', '') . '</dte:MontoImpuesto>';
-            $xml .= '</dte:Impuesto>';
-            $xml .= '</dte:Impuestos>';
-
-            $xml .= '<dte:Total>' . number_format($subtotal, 2, '.', '') . '</dte:Total>';
-            $xml .= '</dte:Item>';
-
-            $lineaItem++;
-        }
-
-        $xml .= '</dte:Items>';
-
-        // Totales
-        $montoSinImpuesto = $venta->total - $venta->impuesto;
-        $xml .= '<dte:Totales>';
-        $xml .= '<dte:TotalImpuestos>';
-        $xml .= '<dte:TotalImpuesto NombreCorto="IVA" TotalMontoImpuesto="' . number_format($venta->impuesto, 2, '.', '') . '"/>';
-        $xml .= '</dte:TotalImpuestos>';
-        $xml .= '<dte:GranTotal>' . number_format($venta->total, 2, '.', '') . '</dte:GranTotal>';
-        $xml .= '</dte:Totales>';
-
-        $xml .= '</dte:DatosEmision>';
-        $xml .= '</dte:DTE>';
-        $xml .= '</dte:SAT>';
-        $xml .= '</dte:GTDocumento>';
-
-        return $xml;
-    }
-
-    /**
-     * Construir XML de anulación
-     */
-    private function construirXMLAnulacion(Venta $venta, string $motivo)
-    {
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>';
-        $xml .= '<dte:GTAnulacionDocumento xmlns:dte="http://www.sat.gob.gt/dte/fel/0.2.0" Version="0.1">';
-        $xml .= '<dte:SAT>';
-        $xml .= '<dte:AnulacionDTE ID="DatosAnulacion">';
-
-        $xml .= '<dte:DatosGenerales ID="' . $venta->numero_autorizacion_fel . '" NumeroDocumentoAAnular="' . $venta->numero_autorizacion_fel . '" NITEmisor="' . $this->configuracion->nit_emisor . '" IDReceptor="' . ($venta->cliente->persona->nit ?? 'CF') . '" FechaEmisionDocumentoAnular="' . $venta->fecha_hora->format('Y-m-d') . '" FechaHoraAnulacion="' . now()->format('Y-m-d\TH:i:s') . '" MotivoAnulacion="' . htmlspecialchars($motivo) . '"/>';
-
-        $xml .= '</dte:AnulacionDTE>';
-        $xml .= '</dte:SAT>';
-        $xml .= '</dte:GTAnulacionDocumento>';
-
-        return $xml;
-    }
-
-    /**
-     * Enviar XML al certificador
-     */
-    private function enviarACertificador(string $xml, string $tipo, ?string $uuidAnular = null)
-    {
-        try {
-            // Firmar el XML
-            $xmlFirmado = $this->firmarXML($xml);
-
-            // Preparar petición según el proveedor
-            $url = $this->configuracion->url_certificador;
-
-            // Ejemplo genérico - adaptar según el proveedor FEL (INFILE, DIGIFACT, etc.)
-            $response = Http::timeout(30)
-                ->withHeaders([
-                    'Content-Type' => 'application/json',
-                    'Authorization' => 'Bearer ' . $this->obtenerToken()
-                ])
-                ->post($url, [
-                    'nit_emisor' => $this->configuracion->nit_emisor,
-                    'correo_copia' => $this->sucursal->email,
-                    'xml_dte' => base64_encode($xmlFirmado)
-                ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                // Validar respuesta exitosa
-                if (isset($data['uuid']) && isset($data['xml_certificado'])) {
-                    return [
-                        'success' => true,
-                        'uuid' => $data['uuid'],
-                        'fecha_certificacion' => $data['fecha_certificacion'] ?? now(),
-                        'xml_certificado' => base64_decode($data['xml_certificado']),
-                        'respuesta_completa' => $data
-                    ];
-                }
-
-                return [
-                    'success' => false,
-                    'error' => $data['descripcion_errores'] ?? 'Error desconocido en certificación'
+                $item['Discounts'] = [
+                    'Discount' => [[
+                        'Amount' => number_format($descuento, 2, '.', '')
+                    ]]
                 ];
             }
-
-            return [
-                'success' => false,
-                'error' => 'Error de comunicación con el certificador: ' . $response->status()
-            ];
-
-        } catch (Exception $e) {
-            Log::error('Error al enviar a certificador: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'error' => 'Error de comunicación: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Firmar XML con la llave de certificación
-     */
-    private function firmarXML(string $xml)
-    {
-        // Implementar la firma digital del XML
-        // Esto depende del certificador y de las librerías disponibles
-        // Ejemplo simplificado:
-
-        if (!$this->configuracion->llave_certificacion) {
-            throw new Exception('No hay llave de certificación configurada');
+            $itemsArray[] = $item;
         }
 
-        // Aquí iría la lógica de firma digital real
-        // Por ahora retornamos el XML sin modificar
-        return $xml;
-    }
+        // 4. Construcción del Array Principal NUC
+        $nuc = [
+            'Version' => '1.00',
+            'CountryCode' => 'GT',
+            'Header' => [
+                'DocType' => 'FACT',
+                'IssuedDateTime' => $venta->fecha_hora->format('Y-m-d\TH:i:s'),
+                'Currency' => 'GTQ',
+            ],
+            'Seller' => [
+                'TaxID' => $nitEmisor,
+                'TaxIDAdditionalInfo' => [
+                    ['Name' => 'AfiliacionIVA', 'Value' => $afiliacion],
+                    ['Name' => 'NombreComercial', 'Value' => substr($this->configuracion->nombre_comercial, 0, 100)]
+                ],
+                'AdditionlInfo' => $frases,
 
-    /**
-     * Obtener token de autenticación del certificador
-     */
-    private function obtenerToken()
-    {
-        // Implementar según el proveedor
-        // Puede requerir usuario/password o certificado
+                'Name' => substr($this->configuracion->nombre_emisor, 0, 100),
+                'BranchInfo' => [
+                    'Code' => (string)$this->configuracion->codigo_establecimiento,
+                    'Name' => substr($this->configuracion->nombre_comercial, 0, 100),
+                    'AddressInfo' => [
+                        'Address' => substr($venta->sucursal->direccion, 0, 100),
+                        'City' => '01001',
+                        'District' => 'Guatemala',
+                        'State' => 'Guatemala',
+                        'Country' => 'GT'
+                    ]
+                ]
+            ],
+            'Buyer' => [
+                'TaxID' => $nitReceptor,
+                'Name' => substr($cliente->razon_social, 0, 100),
+                'AddressInfo' => [
+                    'Address' => substr($cliente->direccion ?? 'Ciudad', 0, 100),
+                    'City' => '01001',
+                    'District' => 'Guatemala',
+                    'State' => 'Guatemala',
+                    'Country' => 'GT'
+                ]
+            ],
+            'Items' => $itemsArray,
+            'Totals' => [
+                'TotalTaxes' => [
+                    'TotalTax' => [[
+                        'Description' => 'IVA',
+                        'Amount' => number_format($venta->impuesto, 2, '.', '')
+                    ]]
+                ],
+                'GrandTotal' => [
+                    'InvoiceTotal' => number_format($venta->total, 2, '.', '')
+                ]
+            ],
+            'AdditionalDocumentInfo' => [
+                'AdditionalInfo' => []
+            ]
+        ];
 
-        try {
-            $response = Http::post($this->configuracion->url_certificador . '/login', [
-                'usuario' => $this->configuracion->usuario_certificador,
-                'clave' => $this->configuracion->clave_certificador
-            ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                return $data['token'] ?? '';
-            }
-
-            throw new Exception('Error al obtener token');
-
-        } catch (Exception $e) {
-            Log::error('Error al obtener token FEL: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Validar estado del servicio FEL
-     */
-    public function validarServicio()
-    {
-        try {
-            $response = Http::timeout(10)
-                ->get($this->configuracion->url_certificador . '/status');
-
-            return $response->successful();
-
-        } catch (Exception $e) {
-            return false;
-        }
+        return $nuc;
     }
 }

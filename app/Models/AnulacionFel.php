@@ -30,7 +30,7 @@ class AnulacionFel extends Model
         return $this->belongsTo(Venta::class);
     }
 
-    public function usuario()
+    public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
